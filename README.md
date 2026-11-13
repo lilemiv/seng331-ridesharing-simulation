@@ -8,6 +8,44 @@ Requests arrive through a Poisson process. An anonymous SimPy driver Resource
 serves customers in FIFO order, subject to exponential patience before assignment.
 Assigned drivers remain occupied through uniform pickup and lognormal trip stages.
 
+## Event Graph
+
+```mermaid
+flowchart TD
+    arrival([Request Arrival])
+    available{"Driver Availability<br/>Check"}
+    queue["Waiting Queue - FIFO<br/>Patience: Exponential, mean 5 min"]
+    abandon([Customer Abandonment])
+    assign([Driver Assignment])
+    pickup["Pickup<br/>Uniform 2-8 min; driver busy"]
+    pickupDone([Pickup Completion])
+    trip["Trip execution<br/>Lognormal, arithmetic mean 10 min; driver busy"]
+    tripDone([Trip Completion])
+    release([Driver Release])
+
+    arrival -->|"Next arrival after<br/>Exponential interarrival, mean 0.75 min"| arrival
+    arrival --> available
+    available -->|"Free capacity, FIFO turn,<br/>and before patience deadline"| assign
+    available -->|"Otherwise: wait or expire"| queue
+    queue -->|"Free capacity, FIFO turn,<br/>and strictly before patience deadline"| assign
+    queue -->|"Patience deadline reached<br/>Expiry wins exact ties"| abandon
+    assign --> pickup
+    pickup --> pickupDone
+    pickupDone --> trip
+    trip --> tripDone
+    tripDone --> release
+    release -.->|"Capacity signal:<br/>check the next eligible FIFO waiter"| available
+```
+
+Arrivals continue independently of customers already waiting or in service. Each
+customer samples patience on arrival and either receives a free driver immediately
+when eligible or waits in FIFO order. Abandonment applies only before assignment; reaching the
+patience deadline wins an exact tie with driver availability. Assigned drivers
+remain occupied through pickup and trip, then become available at trip completion.
+The dashed link signals released capacity for the next FIFO waiter; a completed
+customer leaves the system and never returns to the queue or abandons. The times
+shown are configurable defaults, measured in minutes.
+
 ## Install and run (PowerShell)
 
 Use Python 3.10 or newer. The checked environment is Python 3.14.7 and SimPy 4.1.2.
