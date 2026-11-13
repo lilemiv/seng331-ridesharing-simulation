@@ -1,0 +1,46 @@
+# Python environments, caches, and generated output
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Environment files and local credentials
+.env
+.env.*
+.aws/
+.ssh/
+.codex/
+.config/gh/
+.git-credentials
+credentials*.json
+service-account*.json
+secrets.*
+*.secret
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# Editor settings, temporary files, and operating-system metadata
+.idea/
+.vscode/
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
