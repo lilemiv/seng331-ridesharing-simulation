@@ -94,6 +94,41 @@ is the customer's boarding/trip start. No route or coordinates are modeled yet.
 A driver is occupied continuously from assignment through trip completion.
 Patience applies only before assignment; exact assignment/expiry ties favor expiry.
 
+### Event Graph
+
+```mermaid
+flowchart TD
+    arrival([Request Arrival])
+    available{"Driver Availability<br/>Check"}
+    queue["Waiting Queue - FIFO<br/>Patience: Exponential, mean 5 min"]
+    abandon([Customer Abandonment])
+    assign([Driver Assignment])
+    pickup["Pickup<br/>Uniform 2-8 min; driver busy"]
+    pickupDone([Pickup Completion])
+    trip["Trip execution<br/>Lognormal, arithmetic mean 10 min; driver busy"]
+    tripDone([Trip Completion])
+    release([Driver Release])
+
+    arrival -->|"Next arrival after<br/>Exponential interarrival, mean 0.75 min"| arrival
+    arrival --> available
+    available -->|"Free capacity, FIFO turn,<br/>and before patience deadline"| assign
+    available -->|"Otherwise: wait or expire"| queue
+    queue -->|"Free capacity, FIFO turn,<br/>and strictly before patience deadline"| assign
+    queue -->|"Patience deadline reached<br/>Expiry wins exact ties"| abandon
+    assign --> pickup
+    pickup --> pickupDone
+    pickupDone --> trip
+    trip --> tripDone
+    tripDone --> release
+    release -.->|"Capacity signal:<br/>check the next eligible FIFO waiter"| available
+```
+
+This is the same corrected lifecycle graph shown in [README.md](README.md#event-graph).
+Assignment requires free capacity, FIFO eligibility, and an unexpired patience
+deadline. Drivers stay busy throughout pickup and trip. The dashed return link
+signals released capacity for another waiting customer, not a completed
+customer returning to the queue.
+
 | Record member | Meaning |
 | --- | --- |
 | `request_id` | Unique sequential integer starting at 1 |
