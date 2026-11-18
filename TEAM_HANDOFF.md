@@ -8,7 +8,7 @@ Use Python 3.10+ and run the following from the repository directory in PowerShe
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe main.py
-.\.venv\Scripts\python.exe -m unittest -v
+.\.venv\Scripts\python.exe -B -m unittest discover -v
 ```
 
 The verified environment uses Python 3.14.7 and SimPy 4.1.2. Requirements permit
@@ -201,9 +201,10 @@ empty runs and services unfinished at the horizon.
 
 ## 6. Instructions for the statistics developer
 
-Use the following definitions consistently. These are measurement specifications;
-metric functions, replications, comparisons, and statistical analysis are not
-implemented in this repository.
+Use the following definitions consistently. These are measurement specifications
+for Person 2's statistics module, replications, comparisons, and analysis. The
+pre-existing provisional CLI calculations are not that module; see section 12
+for the independent pending correction.
 
 | Quantity | Definition and population |
 | --- | --- |
@@ -301,8 +302,116 @@ enforced, so do not pass arbitrary nonnumeric objects.
 
 ## 10. Remaining group deliverables
 
-The core implementation and raw integration data end at Step 5. Remaining work is
-statistics/metrics, Q/N/B plots, replications, confidence intervals, beta analysis,
-experimental comparisons (including random versus nearest dispatch), Event Graph,
-notebooks, 2D animation, final report, and presentation. Policy/location engine
-changes are a future agreed extension, not implemented as part of this handoff.
+Steps 1-5 provide the completed engine and raw integration data. Person 1's Week 2
+infrastructure adds CI, presets, CSV export, and reliability coverage (section 12).
+
+Person 2 owns `metrics.py`, `test_metrics.py`, queue delay, time in system,
+time-average Q/N, utilization, statistical analysis, replications, confidence
+intervals, beta analysis, and experiments. These are not missing Week 1 deliverables.
+
+Person 3 owns Event Graph development, Matplotlib/Pygame research, the initial 2D
+prototype, event-history visualization integration, notebooks, and presentation.
+The existing Event Graph is preserved. This infrastructure performs none of that
+research or implementation. Final report coordination and the future instructor
+dispatch comparison remain group responsibilities. Driver/location/policy changes
+require a separate agreed scope.
+
+## 11. Week 2 integration compatibility review
+
+No additional engine interface is required for the current statistics or event
+replay work. The existing contract supports both direct Python consumption and
+optional raw event CSV export; no statistics or visualization is computed here.
+
+| Consumer | Existing data | Access |
+| --- | --- | --- |
+| Person 2 | Lifecycle timestamps, terminal and unfinished states | `sim.requests`: `arrival_time`, `driver_assignment_time`, pickup/trip timestamps, `abandonment_time`, `status`, `service_stage` |
+| Person 2 | Q, N, B and cumulative customer counts | `sim.event_history`: `waiting`, `in_system`, `busy_drivers`, `arrivals`, `completed`, `abandoned` |
+| Person 2 | Run horizon, fleet, distribution parameters and seed | `sim.config`, `sim.env.now`; presets from `scenarios.get_scenario` |
+| Person 3 | Event ordering, timing, customer keys and transitions | `sim.event_history`: `sequence`, `time`, `event_type`, `request_id`, `request_status`, `service_stage` |
+
+Consume data after `run()` returns successfully; treat engine-owned containers
+and request records as read-only. Preserve equal-time sequence order and the
+exclusive horizon. Missing timestamps remain censored outcomes. CSV is a serialized
+snapshot, not a new source of lifecycle events or derived measurements.
+
+The current interface supports schematic event replay. It cannot support actual
+location-based vehicle motion because there are no driver identities, coordinates,
+routes, or destinations. Section 8 proposes an agreed future driver/location
+extension with independent random streams and atomic driver reservation/release.
+That proposal remains unimplemented; no dispatch policy is selected here.
+
+## 12. Week 2 core infrastructure
+
+### Baseline, checks, and CI
+
+The branch baseline is `main` commit `95fda6d`. PR #2 (the assigned-customer CLI
+queue-delay fix and its three tests) was open at branch creation and is not merged
+or copied into this work. The provisional `main.py` calculation therefore retains
+that known limitation until the separate fix is reviewed. No engine, configuration
+default, original test, or teammate-owned deliverable is changed here.
+
+Run `.\.venv\Scripts\python.exe -B -m unittest discover -v` (or
+`.venv/bin/python -B -m unittest discover -v` on macOS/Linux). This baseline has
+91 tests: 70 unchanged core tests, 6 preset tests, 6 CSV tests, and 9 bounded stress
+tests. The one-day simulation is simulated time, not a real-time wait. All code
+added here uses the standard library; SimPy remains the only runtime dependency.
+
+`.github/workflows/python-tests.yml` runs the same discovery command on Python
+3.14 and Ubuntu after installing `requirements.txt`. Triggers are PRs targeting
+`main` and pushes to `main`; permissions are `contents: read`, with no external
+API keys. Failed tests fail CI. View a PR's **Checks** tab or **Actions > Python
+tests**, then open the `unittest` job's logs. Local results and actual hosted CI
+results must be reported separately. Enabling Actions and requiring status checks
+are repository-owner settings, not changes made by this branch.
+
+### Configuration reuse
+
+```python
+from scenarios import SCENARIO_NAMES, get_scenario
+from simulation import RideSharingSimulation
+
+config = get_scenario("high_demand", fleet_size=5, random_seed=42)
+sim = RideSharingSimulation(config)
+sim.run()
+```
+
+`SCENARIO_NAMES` lists `baseline`, `low_demand`, `high_demand`, `small_fleet`, and
+`large_fleet`. Baseline equals `SimulationConfig()`: mean interarrival 0.75 minutes,
+20 drivers. Low/high demand change only that mean to 1.5/0.25 minutes; small/large
+fleet change only capacity to 5/40. These are illustrative inputs, not experiments.
+Each call returns a fresh frozen config using the existing dataclass validation.
+Explicit overrides win; seed, 60-minute horizon, and every unspecified setting
+retain their defaults. Unknown scenario names raise `ValueError`; invalid fields
+or values follow dataclass errors/validation. There is no experiment runner.
+
+### Optional CSV snapshot
+
+```python
+from event_export import export_event_history
+
+export_event_history(sim.event_history, "events.csv")
+```
+
+The exporter accepts an iterable of actual `SimulationEvent` records and a string
+or path object. It writes UTF-8 using Python's standard `csv` module, does not run
+or mutate the simulation, and is never called automatically. Choose an existing
+parent directory; existing output files are overwritten and I/O errors propagate.
+An empty iterable writes only the header. A zero-arrival simulation still exports
+its initial and final boundary markers.
+
+Columns, in order, are:
+
+```text
+sequence,time,event_type,request_id,request_status,service_stage,arrivals,waiting,in_system,busy_drivers,completed,abandoned
+```
+
+Every column is the identically named field defined in section 5. `waiting` is Q,
+`in_system` is N, and `busy_drivers` is B. Counts are logical state after each
+event; `time` is simulation minutes. Missing request IDs/statuses/stages become
+empty cells, not zero. Numbers are not rounded. Rows preserve supplied order,
+including equal-time events; the exporter does not sort or invent observations.
+
+Reopen with `csv.DictReader`; CSV cells are strings. Convert `sequence`, nonempty
+`request_id`, and count fields to integers, and `time` to float. Use the last row
+at a timestamp for the state until the next distinct timestamp. No metrics,
+plots, animation frames, driver identities, or locations are added by export.
