@@ -12,7 +12,12 @@ def format_time(value: float | None) -> str:
 
 
 def calculate_simulation_metrics(requests: list[RideRequest]) -> dict:
-    """Simülasyon istek listesinden temel performans metriklerini hesaplar."""
+    """Return assigned-customer queue delay in minutes and abandonment percent.
+
+    Queue delay ends at assignment, excluding pickup travel. Only assigned
+    customers enter its average; abandoned and still-waiting customers do not.
+    Return zero when that population is empty, and round only for display.
+    """
     total_arrivals = len(requests)
     if total_arrivals == 0:
         return {
@@ -26,15 +31,13 @@ def calculate_simulation_metrics(requests: list[RideRequest]) -> dict:
     for r in requests:
         if r.service_start_time is not None:
             waiting_times.append(r.service_start_time - r.arrival_time)
-        elif r.abandonment_time is not None:
-            waiting_times.append(r.abandonment_time - r.arrival_time)
 
     avg_waiting_time = sum(waiting_times) / len(waiting_times) if waiting_times else 0.0
     abandonment_rate = (abandoned_count / total_arrivals) * 100
 
     return {
-        "average_waiting_time": round(avg_waiting_time, 2),
-        "abandonment_rate_percent": round(abandonment_rate, 2)
+        "average_waiting_time": avg_waiting_time,
+        "abandonment_rate_percent": abandonment_rate
     }
 
 
@@ -57,8 +60,8 @@ def main() -> None:
 
     # En alta metrikleri hesaplayıp yazdıran kısmı ekledik:
     metrics = calculate_simulation_metrics(simulation.requests)
-    print(f"Average Waiting Time: {metrics['average_waiting_time']} minutes")
-    print(f"Abandonment Rate: %{metrics['abandonment_rate_percent']}")
+    print(f"Average Queue Delay (assigned customers): {metrics['average_waiting_time']:.2f} minutes")
+    print(f"Abandonment Rate: %{metrics['abandonment_rate_percent']:.2f}")
 
 
 if __name__ == "__main__":
