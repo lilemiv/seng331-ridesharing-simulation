@@ -4,8 +4,10 @@
 
 This repository implements the Weeks 1-2 core simulation for a three-person
 Modeling and Simulation with Python project. Core delivery target: November 27,
-2026. Step 5 is the final core verification and team handoff. Further development
-requires explicit approval.
+2026. Steps 1-5 complete the engine. Person 1's approved Week 2 scope adds CI,
+configuration reuse, raw event export, bounded testing, and integration support.
+Statistics and visualization remain with their assigned team members; further
+driver/location/policy development requires a separately agreed scope.
 
 ## Core simulation checklist
 
@@ -26,6 +28,32 @@ requires explicit approval.
 - [x] Automatic end-of-run invariants, actual FIFO customer view, and driver ownership checks.
 - [x] README, integration handoff, measurement definitions, and dispatch extension design.
 - [x] Original 50 tests retained, plus 20 final verification/history tests.
+
+## Week 2 Person 1 infrastructure checklist
+
+- [x] GitHub Actions on PRs targeting main and pushes to main: Python 3.14,
+  requirements installation, unittest discovery, read-only contents permission,
+  and no external API secrets. View results under PR Checks or Actions > Python tests.
+- [x] Validated presets for baseline, low/high demand, and small/large fleets.
+  Defaults and random streams are unchanged; no experiment runner is introduced.
+- [x] Optional standard-library CSV export with all 12 actual event fields,
+  header-only empty history support, raw precision, and stable input order.
+- [x] 21 additional automated tests: 6 presets, 6 CSV, 9 stress tests. All 70
+  original tests are retained unchanged; discovery runs 91 tests on this baseline.
+- [x] Integration review confirms existing lifecycle and event fields are sufficient
+  for the current non-geographic Week 2 consumers; no engine refactor is required.
+- [x] README and TEAM_HANDOFF document usage, schema, CI, ownership, and limitations.
+
+Presets use `scenarios.get_scenario(name, **overrides)`. Baseline is unchanged;
+low/high demand set mean interarrival to 1.5/0.25 minutes; small/large fleet set
+capacity to 5/40. All unspecified settings retain `SimulationConfig` defaults.
+Export explicitly with `event_export.export_event_history(sim.event_history, path)`;
+normal runs create no CSV. Column definitions are in TEAM_HANDOFF sections 5/12.
+
+Verify locally with `.venv\Scripts\python.exe -B -m unittest discover -v`.
+Hosted CI execution is separate from local verification. The baseline is main
+`95fda6d`; open PR #2's CLI calculation fix remains separate and was not incorporated.
+No statistics, visualization, notebook, or research deliverable is completed here.
 
 ## Lognormal configuration
 
@@ -91,7 +119,7 @@ parameter changes preserve arrival/patience samples but can change later
 assignments and which requests reach each service stage.
 
 Run locally using `.venv\Scripts\python.exe main.py` and verify using
-`.venv\Scripts\python.exe -m unittest -v`.
+`.venv\Scripts\python.exe -B -m unittest discover -v`.
 
 `event_history` contains immutable `SimulationEvent` snapshots, with ordered
 lifecycle events plus initial and horizon markers. Fields include time, sequence,
@@ -101,12 +129,14 @@ row at a time for the state until the next distinct timestamp. History supplies
 raw states only, not metrics or plots. See [TEAM_HANDOFF.md](TEAM_HANDOFF.md) for
 the complete schema, censoring rules, timing definitions, and consumer instructions.
 
-## Other team members' responsibilities (not implemented here)
+## Remaining team responsibilities
 
-- [ ] Performance statistics and metrics; Q(t), N(t), and B(t) plots.
-- [ ] Multiple replications, confidence intervals, beta analysis, and comparisons.
-- [ ] Final Event Graph documentation and Jupyter Notebook organization.
-- [ ] 2D animation, final report, and presentation.
+- [ ] Person 2: `metrics.py`, `test_metrics.py`, queue delay, time in system,
+  time-average Q/N, driver utilization, and statistical analysis.
+- [ ] Person 2: multiple replications, confidence intervals, beta analysis, and experiments.
+- [ ] Person 3: Event Graph improvements, Matplotlib/Pygame research, Jupyter Notebook,
+  2D visualization prototype, event-history visualization integration, and presentation.
+- [ ] Group: final report and coordination of statistical plots/visualizations.
 - [ ] Instructor-required random-versus-nearest comparison, after an agreed
   driver/location/policy extension is implemented.
 
