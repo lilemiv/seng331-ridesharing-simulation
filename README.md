@@ -10,7 +10,7 @@ serves customers in FIFO order, subject to exponential patience before assignmen
 Assigned drivers remain occupied through uniform pickup and lognormal trip stages.
 
 ## Event Graph
-
+The code-aligned Event Graph and detailed lifecycle explanations are available in [EVENT_GRAPH.md](EVENT_GRAPH.md).
 ```mermaid
 flowchart TD
     arrival([Request Arrival])
