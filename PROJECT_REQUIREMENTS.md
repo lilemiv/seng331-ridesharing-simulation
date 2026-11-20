@@ -51,9 +51,49 @@ Export explicitly with `event_export.export_event_history(sim.event_history, pat
 normal runs create no CSV. Column definitions are in TEAM_HANDOFF sections 5/12.
 
 Verify locally with `.venv\Scripts\python.exe -B -m unittest discover -v`.
-Hosted CI execution is separate from local verification. The baseline is main
-`95fda6d`; open PR #2's CLI calculation fix remains separate and was not incorporated.
-No statistics, visualization, notebook, or research deliverable is completed here.
+Hosted CI execution is separate from local verification. The original infrastructure
+baseline was main `95fda6d`; PR #2 was separate at that delivery. The current
+statistics baseline is main `100696b`, which already includes merged PRs #2/#3.
+
+## Week 2 Person 2 statistics checklist
+
+- [x] Dedicated `metrics.py` with modular calculations and no new dependencies.
+- [x] Queue delay: assignment minus arrival over assigned customers, including
+  unfinished pickup/trip; abandoned and still-waiting customers excluded.
+- [x] Completed system time: completion minus arrival over completed trips only.
+  Abandoned residence and unfinished/censored requests excluded.
+- [x] Both customer means expose the exact observation denominator via
+  `SampleMean.count` and the unrounded value via `.mean`; empty means are 0/count 0.
+- [x] Time-average Q and N from post-event states, divided by observation time T;
+  N includes waiting, pickup, and trip and excludes completed/abandoned customers.
+- [x] Driver utilization: B area / (configured fleet_size * T), including partial
+  pickup and trip exposure; waiting and abandoned customers do not occupy drivers.
+- [x] Shared integration sorts by time/sequence, handles simultaneous zero-duration
+  events, zero initial state, final exposure through T, and clipping after T.
+  Empty history and T=0 return zero; invalid numerical inputs raise `ValueError`.
+- [x] Abandonment fraction uses all arrivals as denominator, including unfinished
+  requests. Fractions [0,1] become percentages only for display; the retained
+  legacy `abandonment_rate_percent` dictionary key stays on the 0-100 scale.
+- [x] CLI displays all six metrics, minutes, and customer observation counts.
+  Calculations live only in `metrics.py`; the existing Week 1 import is preserved.
+- [x] 35 new tests cover exact Q/N/B integrals, all requested outcome/horizon
+  cases, independent per-request exposure checks, precision, bounds,
+  reproducibility, non-mutation, real engine outputs, CLI, and Week 1 compatibility.
+  All 99 baseline tests are retained; discovery passes 134 tests, zero failures/errors.
+- [x] README usage and TEAM_HANDOFF section 13 document API, formulas, populations,
+  denominators, horizon conventions, mathematical examples, and verification.
+
+Use the ledger from a successful run and pass `sim.event_history`, `sim.env.now`,
+and `sim.config.fleet_size` to time-based metrics. Abandoned residence time is
+abandonment minus arrival, a separate population; no residence mean is exposed.
+Request means do not reconstruct an earlier horizon from later final statuses.
+The exclusive engine horizon and all core interfaces are unchanged. No statistics
+function rounds results. The full suite was run after each implementation task;
+the final command is `python -m unittest discover -v` in the virtual environment.
+
+Week 3 warm-up, replications, confidence intervals, beta analysis, and experiments
+remain future work. This statistics delivery does not change Person 3's Event
+Graph, animation, or notebook work. Results describe one finite run, not steady state.
 
 ## Lognormal configuration
 
@@ -131,8 +171,7 @@ the complete schema, censoring rules, timing definitions, and consumer instructi
 
 ## Remaining team responsibilities
 
-- [ ] Person 2: `metrics.py`, `test_metrics.py`, queue delay, time in system,
-  time-average Q/N, driver utilization, and statistical analysis.
+- [ ] Person 2: further statistical analysis beyond the completed Week 2 metrics.
 - [ ] Person 2: multiple replications, confidence intervals, beta analysis, and experiments.
 - [ ] Person 3: Event Graph improvements, Matplotlib/Pygame research, Jupyter Notebook,
   2D visualization prototype, event-history visualization integration, and presentation.

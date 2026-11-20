@@ -201,10 +201,10 @@ empty runs and services unfinished at the horizon.
 
 ## 6. Instructions for the statistics developer
 
-Use the following definitions consistently. These are measurement specifications
-for Person 2's statistics module, replications, comparisons, and analysis. The
-pre-existing provisional CLI calculations are not that module; see section 12
-for the independent pending correction.
+Use the following definitions consistently. Person 2's Week 2 implementation is
+now in `metrics.py`; section 13 documents its API and verification. Replications,
+comparisons, and uncertainty analysis remain future work. The Week 1 CLI
+correction and core infrastructure are already merged into the current baseline.
 
 | Quantity | Definition and population |
 | --- | --- |
@@ -305,9 +305,10 @@ enforced, so do not pass arbitrary nonnumeric objects.
 Steps 1-5 provide the completed engine and raw integration data. Person 1's Week 2
 infrastructure adds CI, presets, CSV export, and reliability coverage (section 12).
 
-Person 2 owns `metrics.py`, `test_metrics.py`, queue delay, time in system,
-time-average Q/N, utilization, statistical analysis, replications, confidence
-intervals, beta analysis, and experiments. These are not missing Week 1 deliverables.
+Person 2's Week 2 `metrics.py`, `test_metrics.py`, queue delay, completed-customer
+system time, time-average Q/N, and pooled utilization are implemented (section 13).
+Statistical analysis, replications, warm-up, confidence intervals, beta analysis,
+and experiments remain future work. These are not missing Week 1 deliverables.
 
 Person 3 owns Event Graph development, Matplotlib/Pygame research, the initial 2D
 prototype, event-history visualization integration, notebooks, and presentation.
@@ -344,11 +345,13 @@ That proposal remains unimplemented; no dispatch policy is selected here.
 
 ### Baseline, checks, and CI
 
-The branch baseline is `main` commit `95fda6d`. PR #2 (the assigned-customer CLI
-queue-delay fix and its three tests) was open at branch creation and is not merged
-or copied into this work. The provisional `main.py` calculation therefore retains
-that known limitation until the separate fix is reviewed. No engine, configuration
-default, original test, or teammate-owned deliverable is changed here.
+Historical infrastructure delivery: its baseline was `main` commit `95fda6d`.
+PR #2 (the assigned-customer CLI queue-delay fix and its three tests) was open at
+that branch's creation and was not merged or copied into the infrastructure PR.
+Its provisional `main.py` calculation retained that limitation until PR #2 was
+reviewed separately. That infrastructure work changed no engine, configuration
+default, original test, or teammate-owned deliverable. Both PRs are now merged;
+section 13 describes the current statistics baseline.
 
 Run `.\.venv\Scripts\python.exe -B -m unittest discover -v` (or
 `.venv/bin/python -B -m unittest discover -v` on macOS/Linux). This baseline has
@@ -415,3 +418,117 @@ Reopen with `csv.DictReader`; CSV cells are strings. Convert `sequence`, nonempt
 `request_id`, and count fields to integers, and `time` to float. Use the last row
 at a timestamp for the state until the next distinct timestamp. No metrics,
 plots, animation frames, driver identities, or locations are added by export.
+
+## 13. Week 2 Person 2 statistics delivery
+
+### Baseline and API
+
+The statistics branch starts at `main` commit `100696b`, with PRs #2 and #3
+already merged. No open infrastructure PR was merged or copied. All 99 tests on
+that current baseline pass unchanged. Calculations were moved out of `main.py`
+into `metrics.py`, reusing the correct Week 1 assignment-delay definition.
+`main.calculate_simulation_metrics(requests)` remains an importable alias of
+`metrics.calculate_simulation_metrics`, preserving both legacy dictionary keys
+and their units. It returns full precision; only the CLI formats numbers.
+
+```python
+from metrics import (
+    average_queue_delay, average_time_in_system, time_average_queue_length,
+    time_average_number_in_system, driver_utilization, abandonment_rate,
+)
+
+# sim has completed run() successfully; use its ledger at this same horizon.
+delay = average_queue_delay(sim.requests)
+system_time = average_time_in_system(sim.requests)
+T = sim.env.now
+q = time_average_queue_length(sim.event_history, T)
+n = time_average_number_in_system(sim.event_history, T)
+u = driver_utilization(sim.event_history, T, sim.config.fleet_size)
+a = abandonment_rate(sim.requests)
+print(delay.mean, delay.count, system_time.mean, system_time.count)
+print(f"Driver utilization: {u:.2%}; abandonment: {a:.2%}")
+```
+
+Each public metric accepts an iterable of actual engine records. Materialize a
+one-shot iterator before reusing it across calls. Request averages assume a valid
+ledger at the observation horizon; they do not reconstruct earlier outcomes from
+a later ledger. Neither request records, history order, resource state, nor random
+streams are mutated. No additional dependencies are needed.
+
+### Populations and denominators
+
+| Metric | Numerator | Denominator / population |
+| --- | --- | --- |
+| Queue delay | Sum of assignment minus arrival | Assigned count, including completed and active pickup/trip; excludes abandoned and waiting |
+| Completed time in system | Sum of completion minus arrival | Completed count only; excludes abandoned and unfinished pickup/trip/waiting |
+| Time-average queue length | Integral of engine `waiting` Q(t) | Observation duration T |
+| Time-average number in system | Integral of engine `in_system` N(t) | T; N includes waiting and assigned pickup/trip, excludes departures |
+| Pooled driver utilization | Integral of engine `busy_drivers` B(t) | Configured fleet_size * T; includes pickup and trip |
+| Abandonment rate | Abandoned count | All arrivals, including unfinished arrivals |
+
+Customer means return frozen `SampleMean(mean, count)`, with no rounding. Empty
+populations return `SampleMean(0.0, 0)`; the zero mean does not indicate an observed
+zero-duration customer. Abandonment residence is abandonment minus arrival and is
+distinct from completed-trip system time; no separate residence mean is exposed
+in this version. Unfinished requests are censored and excluded from the primary
+completed-customer mean, but assigned unfinished requests do enter queue delay.
+Do not use sampled durations to fabricate future completion timestamps.
+
+### Integration, horizons, and conventions
+
+The common integration helper sorts a copy by `(event.time, event.sequence)`.
+It uses each post-event state until the next timestamp, summing rectangles
+`state * elapsed_minutes / T` with `math.fsum`. Utilization uses `B/fleet_size`
+as that state. The initial state is zero from 0 until the first event; the last
+state persists to T. Equal-time rows contribute zero-duration rectangles, and
+the final sequence at that time supplies the following interval. History after
+T is ignored for exposure; a row at T has zero following duration. This method
+does not average event samples.
+
+The exclusive engine horizon is unchanged: an event scheduled exactly at T is
+not processed. Unfinished queue, pickup, and trip exposure is included up to T,
+without draining the system. For a successful full run pass `sim.env.now` and
+`sim.config.fleet_size`; never normalize busy exposure by arrivals or completions.
+
+Empty histories mean zero state throughout. T=0 returns 0.0 without scanning
+history; the engine configuration continues to require positive duration.
+Negative/nonfinite horizons and timestamps, negative/nonfinite in-window states,
+nonpositive/noninteger/bool fleet capacity, and B above fleet capacity raise
+`ValueError`. Valid utilization is bounded at 1.0 only to suppress floating-point
+drift. Utilization and abandonment return fractions [0, 1]; multiply by 100 or
+use Python percentage formatting for display. The legacy
+`abandonment_rate_percent` key is already on the 0-100 scale.
+
+### Mathematical and regression verification
+
+Deterministic example: T=10, Q=0 until 2, Q=3 from 2 to 5, Q=1 from 5 to 10;
+Q area is 14 customer-minutes and Q average is 1.4. With B=1 from 2 to 5 and B=2
+from 5 to 10, B area is 13 driver-minutes, N area is 27 customer-minutes, N average
+is 2.7, and a two-driver fleet has utilization 13/(2*10)=0.65 (65%).
+
+A controlled real run with arrivals 0/1/2/11, patience 100/2/100/100, one driver,
+pickup 2, trip 8, and T=13 yields queue delay 4 (n=2), completed system time 10
+(n=1), Q average 12/13, N average 25/13, utilization 1, and abandonment 1/4.
+This includes completed, abandoned, active-trip, and waiting customers.
+
+`test_metrics.py` adds 35 tests. Tests independently sum per-request timestamp
+intervals for Q/N/B exposure and compare against event integrals to 12 decimal
+places, including partial service. They check N_average = Q_average + fleet*u,
+same-time ordering, initial/final intervals, zero arrivals/windows, empty history,
+correct populations, precision, utilization bounds, censoring at exact horizons,
+non-mutation, reproducibility, legacy Week 1 imports/values, and CLI formatting.
+All 99 baseline tests remain unchanged: 70 core, 21 infrastructure, 3 Week 1 CLI,
+and 5 existing visualization tests. Full discovery passes 134 tests, zero failures
+or errors. Run `python -m unittest discover -v` in the project virtual environment.
+
+The full suite passed after each task: module foundation 99, queue delay 104,
+system time 107, Q integration 114, N integration 116, utilization 121, integration
+tests 133, CLI 134, and documentation 134. Default `main.py` output is documented
+in README: 86 arrivals = 58 completed + 20 active + 0 waiting + 8 abandoned;
+queue delay 0.28 (n=78), completed system time 15.01 (n=58), Q average 0.462,
+N average 17.792, utilization 86.65%, abandonment 9.30%.
+
+These are descriptive finite-run metrics, with no steady-state or uncertainty
+claim. Week 3 warm-up/replications/confidence intervals/beta analysis/experiments
+remain unimplemented. No core simulation, Event Graph, animation, notebook,
+dispatch policy, or existing test is changed by this statistics delivery.
