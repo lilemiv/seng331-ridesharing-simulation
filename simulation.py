@@ -2,7 +2,7 @@
 
 from collections import Counter
 from collections.abc import Generator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isclose, isfinite
 import random
 from typing import Literal
@@ -10,6 +10,7 @@ from typing import Literal
 import simpy
 
 from config import SimulationConfig
+from dispatch import Driver, select_nearest_driver, select_random_driver
 
 
 EventType = Literal[
@@ -41,6 +42,19 @@ class SimulationEvent:
     abandoned: int
 
 
+@dataclass(frozen=True)
+class DriverEvent:
+    """Named assignment/release snapshot, separate from customer event history."""
+
+    sequence: int
+    time: float
+    event_type: Literal["driver_assignment", "driver_release"]
+    driver_id: int
+    request_id: int
+    x: float
+    y: float
+
+
 @dataclass
 class RideRequest:
     """Arrival ledger entry. Times use minutes; None means not yet reached.
@@ -61,6 +75,11 @@ class RideRequest:
     trip_start_time: float | None = None
     pickup_duration: float | None = None
     trip_duration: float | None = None
+    assigned_driver_id: int | None = None
+    pickup_x: float | None = None
+    pickup_y: float | None = None
+    destination_x: float | None = None
+    destination_y: float | None = None
 
     @property
     def driver_assignment_time(self) -> float | None:
@@ -92,7 +111,17 @@ class RideSharingSimulation:
         self.patience_rng = random.Random(stream_seed + 1)
         self.pickup_rng = random.Random(stream_seed + 2)
         self.trip_rng = random.Random(stream_seed + 3)
+        self.driver_location_rng = random.Random(stream_seed + 4)
+        self.pickup_location_rng = random.Random(stream_seed + 5)
+        self.destination_rng = random.Random(stream_seed + 6)
+        self.dispatch_rng = random.Random(stream_seed + 7)
         self.driver_pool = simpy.Resource(self.env, capacity=config.fleet_size)
+        self._drivers = {
+            driver_id: Driver(driver_id, *self._sample_position(self.driver_location_rng))
+            for driver_id in range(1, config.fleet_size + 1)
+        }
+        self._driver_history: list[DriverEvent] = []
+        self._initial_drivers = self.drivers
         # Complete arrival history; the active FIFO queue is driver_pool.queue.
         self.requests: list[RideRequest] = []
         # Map pending/held Resource events to their customer records.
@@ -122,6 +151,8 @@ class RideSharingSimulation:
                     1.0 / self.config.mean_patience_minutes
                 ),
             )
+            request.pickup_x, request.pickup_y = self._sample_position(self.pickup_location_rng)
+            request.destination_x, request.destination_y = self._sample_position(self.destination_rng)
             self.requests.append(request)
             self._record_event("arrival", request)
             # Starting service in another process lets arrivals continue while
@@ -151,6 +182,7 @@ class RideSharingSimulation:
                     # slot granted during a same-time event race.
                     return
 
+                self._assign_driver(request)
                 request.service_start_time = self.env.now
                 request.status = "in_service"
                 self._record_event("driver_assignment", request)
@@ -160,9 +192,70 @@ class RideSharingSimulation:
                 request.completion_time = self.env.now
                 request.status = "completed"
                 self._record_event("trip_completion", request)
+                self._release_driver(request)
             # Context exit releases the driver for the next waiting customer.
         finally:
+            # A failed service must not leak the named reservation. Do not
+            # fabricate a normal release event for an invalid, discarded run.
+            if request.assigned_driver_id is not None:
+                driver = self._drivers[request.assigned_driver_id]
+                if driver.assigned_request_id == request.request_id:
+                    self._release_driver(request, record=False)
             del self._resource_requests[driver_request]
+
+    @property
+    def drivers(self) -> tuple[Driver, ...]:
+        """ID-ordered immutable snapshots; refresh this view after later events."""
+        return tuple(self._drivers.values())
+
+    @property
+    def initial_drivers(self) -> tuple[Driver, ...]:
+        return self._initial_drivers
+
+    def _sample_position(self, rng: random.Random) -> tuple[float, float]:
+        return (rng.uniform(0.0, self.config.city_width),
+                rng.uniform(0.0, self.config.city_height))
+
+    @property
+    def available_drivers(self) -> tuple[Driver, ...]:
+        return tuple(driver for driver in self.drivers if driver.is_available)
+
+    @property
+    def busy_drivers(self) -> tuple[Driver, ...]:
+        return tuple(driver for driver in self.drivers if not driver.is_available)
+
+    @property
+    def driver_history(self) -> tuple[DriverEvent, ...]:
+        return tuple(self._driver_history)
+
+    def _assign_driver(self, request: RideRequest) -> None:
+        # Called only after a valid FIFO capacity grant; no yield until reserved.
+        if self.config.dispatch_policy == "nearest":
+            driver = select_nearest_driver(self.drivers, request.pickup_x, request.pickup_y)
+        else:
+            driver = select_random_driver(self.drivers, self.dispatch_rng)
+        self._drivers[driver.driver_id] = replace(
+            driver, assigned_request_id=request.request_id
+        )
+        request.assigned_driver_id = driver.driver_id
+        self._record_driver_event("driver_assignment", driver.driver_id, request)
+
+    def _release_driver(self, request: RideRequest, *, record: bool = True) -> None:
+        driver = self._drivers[request.assigned_driver_id]
+        self._drivers[driver.driver_id] = replace(
+            driver, assigned_request_id=None,
+            x=request.destination_x if record else driver.x,
+            y=request.destination_y if record else driver.y,
+        )
+        if record:
+            self._record_driver_event("driver_release", driver.driver_id, request)
+
+    def _record_driver_event(self, kind: str, driver_id: int, request: RideRequest) -> None:
+        driver = self._drivers[driver_id]
+        self._driver_history.append(DriverEvent(
+            len(self._driver_history), self.env.now, kind,
+            driver_id, request.request_id, driver.x, driver.y,
+        ))
 
     def provide_service(
         self, request: RideRequest
@@ -321,6 +414,89 @@ class RideSharingSimulation:
         require((final.waiting, final.busy_drivers, final.completed, final.abandoned)
                 == (counts["waiting"], counts["in_service"], counts["completed"], counts["abandoned"]),
                 "final history snapshot disagrees with results")
+        self._validate_dispatch_invariants()
+
+    def _validate_dispatch_invariants(self) -> None:
+        """Reconcile named ownership, locations, and the assignment/release log."""
+        def require(condition: bool, message: str) -> None:
+            if not condition:
+                raise RuntimeError(f"Simulation invariant failed: {message}")
+
+        def valid_position(x: float, y: float) -> bool:
+            return all(isinstance(value, (int, float)) and not isinstance(value, bool)
+                       and isfinite(value) and 0 <= value <= limit
+                       for value, limit in ((x, self.config.city_width),
+                                            (y, self.config.city_height)))
+
+        ids = set(range(1, self.config.fleet_size + 1))
+        require(set(self._drivers) == ids
+                and all(key == driver.driver_id for key, driver in self._drivers.items()),
+                "driver identities or fleet size")
+        require([driver.driver_id for driver in self.initial_drivers] == sorted(ids)
+                and all(driver.is_available for driver in self.initial_drivers),
+                "initial driver identities or assignments")
+        require(all(valid_position(driver.x, driver.y)
+                    for driver in (*self.initial_drivers, *self.drivers)), "driver coordinates")
+
+        records = {request.request_id: request for request in self.requests}
+        expected_busy = {}
+        for request in self.requests:
+            require(valid_position(request.pickup_x, request.pickup_y)
+                    and valid_position(request.destination_x, request.destination_y),
+                    f"request {request.request_id}: coordinates")
+            if request.status in {"waiting", "abandoned"}:
+                require(request.assigned_driver_id is None, "unassigned request has driver identity")
+            else:
+                require(request.assigned_driver_id in ids, "assigned request has invalid driver identity")
+                if request.status == "in_service":
+                    require(request.assigned_driver_id not in expected_busy,
+                            "driver serves multiple requests")
+                    expected_busy[request.assigned_driver_id] = request.request_id
+        actual_busy = {driver.driver_id: driver.assigned_request_id
+                       for driver in self.drivers if not driver.is_available}
+        require(actual_busy == expected_busy and len(actual_busy) == self.driver_pool.count,
+                "named drivers disagree with active requests or Resource")
+
+        # Reconstruct positions and ownership without trusting final driver state
+        # or maintaining a second mutable availability pool.
+        positions = {driver.driver_id: (driver.x, driver.y) for driver in self.initial_drivers}
+        active = {}
+        assigned = set()
+        released = set()
+        previous = 0.0
+        for sequence, event in enumerate(self._driver_history):
+            require(event.sequence == sequence and isfinite(event.time)
+                    and previous <= event.time < self.env.now, "driver history chronology")
+            require(event.driver_id in ids and event.request_id in records,
+                    "driver history identity")
+            require(valid_position(event.x, event.y), "driver history coordinates")
+            request = records[event.request_id]
+            require(request.assigned_driver_id == event.driver_id, "driver history assignment mismatch")
+            if event.event_type == "driver_assignment":
+                require(event.driver_id not in active and event.request_id not in assigned
+                        and event.time == request.driver_assignment_time,
+                        "duplicate driver assignment or invalid assignment time")
+                require((event.x, event.y) == positions[event.driver_id],
+                        "assignment position differs from last known driver position")
+                active[event.driver_id] = event.request_id
+                assigned.add(event.request_id)
+            else:
+                require(event.event_type == "driver_release"
+                        and active.get(event.driver_id) == event.request_id
+                        and event.request_id not in released
+                        and event.time == request.completion_time,
+                        "driver release without matching completion/assignment")
+                require((event.x, event.y) == (request.destination_x, request.destination_y),
+                        "driver release is not at destination")
+                positions[event.driver_id] = (event.x, event.y)
+                del active[event.driver_id]
+                released.add(event.request_id)
+            previous = event.time
+        require(assigned == {r.request_id for r in self.requests if r.assigned_driver_id is not None}
+                and released == {r.request_id for r in self.requests if r.status == "completed"},
+                "missing driver assignment or release history")
+        require(active == actual_busy and positions == {d.driver_id: (d.x, d.y) for d in self.drivers},
+                "driver history disagrees with final ownership or position")
 
     def run(self) -> None:
         """Advance to the configured horizon; events at that time are excluded."""

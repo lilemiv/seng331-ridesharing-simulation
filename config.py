@@ -15,6 +15,9 @@ class SimulationConfig:
     pickup_max_minutes: float = 8.0
     trip_mean_minutes: float = 10.0  # Arithmetic mean, not the normal mean mu.
     trip_sigma: float = 0.5  # Standard deviation of log(trip duration).
+    city_width: float = 10.0  # Abstract planar kilometres; not travel-time inputs.
+    city_height: float = 10.0
+    dispatch_policy: str = "random"
 
     @property
     def trip_mu(self) -> float:
@@ -22,6 +25,17 @@ class SimulationConfig:
         return log(self.trip_mean_minutes) - self.trip_sigma * self.trip_sigma / 2.0
 
     def __post_init__(self) -> None:
+        if self.dispatch_policy not in ("random", "nearest"):
+            raise ValueError("dispatch_policy must be 'random' or 'nearest'.")
+        for name in ("city_width", "city_height"):
+            value = getattr(self, name)
+            try:
+                valid = (not isinstance(value, bool) and isinstance(value, (int, float))
+                         and isfinite(value) and value > 0)
+            except OverflowError:
+                valid = False
+            if not valid:
+                raise ValueError(f"{name} must be finite and positive.")
         if isinstance(self.random_seed, bool) or not isinstance(self.random_seed, int):
             raise ValueError("Random seed must be an integer.")
         # NaN and infinity cannot define a valid arrival rate or run horizon.
