@@ -1,17 +1,20 @@
 # Project 9: Ride-Sharing Dispatch in a City Zone
 
 A university Modeling and Simulation with Python project. This repository contains
-the core discrete-event simulation engine and its team integration data.
-All simulation times are minutes. Steps 1-5 are complete; Week 2 adds CI,
-reusable configurations, optional raw event export, bounded reliability tests,
-and Person 2's finite-run performance metrics.
+the core discrete-event simulation engine, performance statistics, and a schematic
+Tkinter 2D event-history viewer. All simulation times are minutes. Steps 1-5 and
+Week 2 are complete, including CI, reusable configurations, optional raw event
+export, bounded reliability tests, finite-run performance metrics, and the initial
+visualization prototype.
 
 Requests arrive through a Poisson process. An anonymous SimPy driver Resource
 serves customers in FIFO order, subject to exponential patience before assignment.
 Assigned drivers remain occupied through uniform pickup and lognormal trip stages.
 
 ## Event Graph
+
 The code-aligned Event Graph and detailed lifecycle explanations are available in [EVENT_GRAPH.md](EVENT_GRAPH.md).
+
 ```mermaid
 flowchart TD
     arrival([Request Arrival])
@@ -61,7 +64,9 @@ python -m venv .venv
 ```
 
 On macOS/Linux, use `.venv/bin/python` in place of the Windows executable path.
-SimPy is the only external dependency; tests use the standard library.
+SimPy (`simpy>=4.1,<5` in `requirements.txt`) is the only pip dependency. Tests
+use `unittest`; full discovery also imports Tkinter for the replay-state tests,
+but does not open a GUI. See the visualization section for Tcl/Tk requirements.
 
 ## Continuous integration
 
@@ -147,7 +152,51 @@ values are not rounded. Empty histories produce a header only. Choose any output
 path whose parent already exists; an existing file is overwritten. Reopen using
 `csv.DictReader`. Full field definitions are in [TEAM_HANDOFF.md](TEAM_HANDOFF.md).
 
-## Week 2 statistics
+## Tkinter 2D city visualization
+
+From the repository directory, run either command with the configured Python:
+
+```powershell
+python city_visualization.py
+python city_visualization.py --csv events.csv
+```
+
+For the project virtual environment, replace `python` with
+`.\.venv\Scripts\python.exe` (Windows) or `.venv/bin/python` (macOS/Linux).
+The first command runs `RideSharingSimulation(SimulationConfig())` once and then
+replays its `event_history`. The second loads an existing CSV created by
+`export_event_history`, as shown above, without running a new simulation.
+`main.py` runs the console simulation and statistics; it does not launch the viewer.
+
+`CityViewer` displays customers in waiting, pickup, trip, completed, and abandoned
+areas, with event details, simulation time, and aggregate counts. Play/Pause,
+Restart, and a speed slider control replay. `normalize_events()` accepts engine
+events or CSV dictionaries and returns ordered `ReplayEvent` records;
+`ReplayState.apply()` reconstructs customer stages from lifecycle transitions
+and checks them against the recorded counts. Same-time events retain sequence
+order and are drawn together. Full replay requires start/end boundary events;
+a header-only CSV cannot be replayed. See [TEAM_HANDOFF.md](TEAM_HANDOFF.md#7-instructions-for-the-animation-and-notebook-developer)
+for interfaces and a direct Python example.
+
+The viewer requires Python's `tkinter`/`ttk` modules, the Tcl/Tk runtime, and an
+accessible graphical desktop. If Tkinter is absent, install your Python
+distribution's Tcl/Tk support; it is not provided by `requirements.txt` or a pip
+package. A headless runner can execute replay-state tests if Tkinter is importable,
+but cannot open `tk.Tk()` without a display. The console engine and CSV export
+can run without opening a window.
+
+Importing Tkinter alone does not verify its runtime installation: `tk.Tk()` can
+still fail if Tcl/Tk files such as `init.tcl` are missing. Restore the Python
+distribution's Tcl/Tk support before launching the viewer in that case.
+
+This is a **schematic 2D prototype**, not a complete geographic driver movement
+simulation or the final polished bonus animation. Roads, buildings, and customer
+positions are illustrative. Customers change areas at recorded events; there are
+no individual driver IDs, actual coordinates, routes, continuous movement, or
+random/nearest-driver selection. Crowded areas show overflow counts. The viewer
+does not provide Q(t)/B(t) plots or notebook analysis.
+
+## Performance statistics (`metrics.py`)
 
 `metrics.py` reads the existing request ledger and event history after a successful
 `run()`. Calculations retain full precision; only console output is formatted.
@@ -227,14 +276,17 @@ experiments remain future work. No steady-state or uncertainty claim is made.
 - `event_export.py`: opt-in serialization of raw event history, with no metrics.
 - `metrics.py`: modular, unrounded customer means/counts, time averages, and rates.
 - `main.py`: the command-line run and formatted statistics from `metrics.py`.
-- `test_simulation.py`: the original 70 automated tests, unchanged.
+- `city_visualization.py`: Tkinter `CityViewer`, event normalization, CSV loading,
+  and validated replay state; schematic display only.
+- `test_simulation.py`: 70 core simulation tests.
 - `test_scenarios.py`, `test_event_export.py`, `test_stress_simulation.py`: 21
   additional tests.
-- `test_main.py`: 3 retained Week 1 queue-delay regressions;
-  `test_city_visualization.py`: 5 retained tests from the main baseline.
-- `test_metrics.py`: 35 new metric tests, including independent timestamp exposure
+- `test_main.py`: 3 Week 1 queue-delay regressions.
+- `test_city_visualization.py`: 5 replay-state, ordering, CSV, and validation tests;
+  no GUI window is opened.
+- `test_metrics.py`: 35 metric tests, including independent timestamp exposure
   checks, deterministic integrals, censoring, precision, reproducibility, and CLI.
-  Unittest discovery passes 134 tests (99 baseline + 35 new).
+  Unittest discovery covers 134 tests in total.
 - `.github/workflows/python-tests.yml`: CI on PRs and main pushes.
 - [PROJECT_REQUIREMENTS.md](PROJECT_REQUIREMENTS.md): scope and completion checklist.
 - [TEAM_HANDOFF.md](TEAM_HANDOFF.md): integration contract, measurement definitions,
@@ -253,17 +305,15 @@ export, CI, and integration support.
 
 Person 2's Week 2 metrics and tests are implemented. Further statistical analysis,
 replications, confidence intervals, and experiments remain with Person 2.
-Person 3 owns Event Graph development, animation
-technology research, 2D visualization, notebooks, and final presentation.
-
-The statistics branch starts from current `main` at `100696b`, which already
-contains the merged core infrastructure PR #3 and Week 1 correction PR #2.
-The correct assigned-only queue-delay calculation is reused in `metrics.py`.
-There is no dependency on an open infrastructure branch. Event Graph, animation,
-notebook, core simulation, and existing test files are unchanged by this work.
+Person 3 has delivered the corrected Event Graph and initial Tkinter 2D prototype
+with event-history and CSV integration. Further animation improvements, Q(t)/B(t)
+plots, the final Jupyter Notebook, and presentation remain future work. The group
+owns the final report and coordination of the experimental factor analysis and
+random-versus-nearest dispatch comparison, which still needs a driver/location
+model. See [PROJECT_REQUIREMENTS.md](PROJECT_REQUIREMENTS.md) for the checklist.
 
 Resource slots remain anonymous: there are no driver IDs, coordinates, routes,
-or dispatch policies. Event history supports schematic replay; location-based
+or dispatch policies. The existing viewer provides schematic replay; location-based
 animation needs a future agreed model, proposed in handoff section 8. No such
 extension is implemented. History grows with events, so stress tests are bounded
 (the longest horizon is 1440 simulated minutes). CSV exports contain raw data only.
