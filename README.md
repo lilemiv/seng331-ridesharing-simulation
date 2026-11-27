@@ -2,14 +2,22 @@
 
 A university Modeling and Simulation with Python project. This repository contains
 the core discrete-event simulation engine, performance statistics, and a schematic
-Tkinter 2D event-history viewer. All simulation times are minutes. Steps 1-5 and
-Week 2 are complete, including CI, reusable configurations, optional raw event
-export, bounded reliability tests, finite-run performance metrics, and the initial
-visualization prototype.
+Tkinter 2D event-history viewer. All simulation times are minutes. Weeks 1-2 and
+Person 1's Week 3 dispatch are complete, including CI, reusable configurations,
+optional raw event export, bounded reliability tests, finite-run performance
+metrics and the initial visualization prototype.
 
-Requests arrive through a Poisson process. An anonymous SimPy driver Resource
-serves customers in FIFO order, subject to exponential patience before assignment.
-Assigned drivers remain occupied through uniform pickup and lognormal trip stages.
+Requests arrive through a Poisson process. A SimPy Resource gates FIFO capacity,
+subject to exponential patience before assignment. Named drivers are selected
+by random or nearest dispatch and move to the customer's destination on completion.
+Assigned drivers remain occupied through pickup and lognormal trip stages.
+
+Main was synchronized to `f46ece5bd797a540a2ce1be4cace1ddb1244b85a` after merged
+[PR #12](https://github.com/lilemiv/seng331-ridesharing-simulation/pull/12)
+reverted merged [PR #11](https://github.com/lilemiv/seng331-ridesharing-simulation/pull/11)
+for team workflow reasons. The combined work remains recoverable at `c5bc097`
+and its original branch. PR #7 dispatch, PR #10 optional pickup and the earlier
+initial viewer, plots and notebook are preserved. This PR updates documentation only.
 
 An optional `pickup_mode="distance_aware"` uses pickup overhead plus assignment
 distance / speed. The default remains `"uniform"`; see
@@ -69,7 +77,7 @@ python -m venv .venv
 ```
 
 On macOS/Linux, use `.venv/bin/python` in place of the Windows executable path.
-SimPy (`simpy>=4.1,<5` in `requirements.txt`) is the only pip dependency. Tests
+Dependencies in `requirements.txt` are SimPy (`simpy>=4.1,<5`) and Matplotlib. Tests
 use `unittest`; full discovery also imports Tkinter for the replay-state tests,
 but does not open a GUI. See the visualization section for Tcl/Tk requirements.
 
@@ -197,9 +205,11 @@ distribution's Tcl/Tk support before launching the viewer in that case.
 This is a **schematic 2D prototype**, not a complete geographic driver movement
 simulation or the final polished bonus animation. Roads, buildings, and customer
 positions are illustrative. Customers change areas at recorded events; there are
-no individual driver IDs, actual coordinates, routes, continuous movement, or
-random/nearest-driver selection. Crowded areas show overflow counts. The viewer
-does not provide Q(t)/B(t) plots or notebook analysis.
+no geographic routes or continuous driver movement in the viewer. The engine
+does expose driver IDs, coordinates and both dispatch policies. Crowded areas
+show overflow counts. Initial Q(t)/B(t) plots are in `simulation_plots.py`, and
+the Version 1 analysis notebook is `ridesharing_analysis.ipynb` (both merged in
+PR #8). Notebook enhancements and broader GUI verification remain pending.
 
 ## Performance statistics (`metrics.py`)
 
@@ -291,11 +301,22 @@ experiments remain future work. No steady-state or uncertainty claim is made.
   no GUI window is opened.
 - `test_metrics.py`: 35 metric tests, including independent timestamp exposure
   checks, deterministic integrals, censoring, precision, reproducibility, and CLI.
-  Unittest discovery covers 134 tests in total.
+- `dispatch.py`, `test_dispatch.py`: named drivers, coordinates, random/nearest
+  dispatch and 48 tests.
+- `test_distance_aware_pickup.py`: 35 optional pickup/configuration/integration tests.
+- `simulation_plots.py`, `ridesharing_analysis.ipynb`: initial Q(t)/B(t) plots
+  and Version 1 notebook; use a Jupyter-capable environment for the notebook.
+  Actual unittest discovery passes **217 tests, 0 failures/errors/skips**.
 - `.github/workflows/python-tests.yml`: CI on PRs and main pushes.
 - [PROJECT_REQUIREMENTS.md](PROJECT_REQUIREMENTS.md): scope and completion checklist.
 - [TEAM_HANDOFF.md](TEAM_HANDOFF.md): integration contract, measurement definitions,
-  consumer guidance, limitations, and proposed dispatch extension.
+  consumer guidance, limitations, implemented dispatch and pending team contracts.
+
+Recovery checks also passed for direct/CSV replay, plot data/rendering and
+headless controller behavior across all four policy/pickup combinations.
+All five substantive cells in the existing notebook executed in a fresh kernel
+using an existing isolated verification environment. GUI windows/rendering were
+not exercised; broader GUI verification remains Person 3's task.
 
 Default seed-42 output: 86 arrivals, 58 completed, 20 in service, 0 waiting, and 8
 abandoned after 60 minutes. The engine validates conservation, lifecycle timing,
@@ -303,22 +324,70 @@ FIFO membership, driver ownership/capacity, and history consistency on each
 successful `run()`. Invalid results raise `RuntimeError`; failed runs must be
 discarded.
 
-## Team scope
+## Week 1 completed tasks
 
-Person 1 owns core reliability, validation, configuration infrastructure, raw data
-export, CI, and integration support.
+- [x] SimPy engine, Poisson arrivals, FIFO, patience/abandonment, uniform pickup,
+  lognormal trips, request lifecycle and original deterministic CLI/API.
 
-Person 2's Week 2 metrics and tests are implemented. Further statistical analysis,
-replications, confidence intervals, and experiments remain with Person 2.
-Person 3 has delivered the corrected Event Graph and initial Tkinter 2D prototype
-with event-history and CSV integration. Further animation improvements, Q(t)/B(t)
-plots, the final Jupyter Notebook, and presentation remain future work. The group
-owns the final report and coordination of the experimental factor analysis and
-random-versus-nearest dispatch comparison, which still needs a driver/location
-model. See [PROJECT_REQUIREMENTS.md](PROJECT_REQUIREMENTS.md) for the checklist.
+## Week 2 completed tasks
 
-Resource slots remain anonymous: there are no driver IDs, coordinates, routes,
-or dispatch policies. The existing viewer provides schematic replay; location-based
-animation needs a future agreed model, proposed in handoff section 8. No such
-extension is implemented. History grows with events, so stress tests are bounded
-(the longest horizon is 1440 simulated minutes). CSV exports contain raw data only.
+- [x] Person 1: event history/invariants, presets, CSV export, stress tests and CI.
+- [x] Person 2: six finite-run metrics with denominators and censoring tests.
+- [x] Person 3: Event Graph and initial Tkinter viewer with controls and replay.
+
+The initial plots and Version 1 notebook subsequently merged in PR #8 are also
+preserved; they are separate from the pending enhancements below.
+
+## Person 1 Week 3 completed tasks
+
+- [x] Driver identities/coordinates, customer pickups/destinations, random/nearest
+  dispatch, driver location updates, FIFO/abandonment integration and dispatch tests.
+- [x] Optional distance-aware pickup, default uniform mode and API/core compatibility.
+
+See [DISPATCH_DESIGN.md](DISPATCH_DESIGN.md) for snapshots, eight RNG streams,
+policy selection and usage. Configure both choices explicitly when needed:
+
+```python
+config = SimulationConfig(dispatch_policy="nearest", pickup_mode="distance_aware")
+```
+
+## Person 2 Week 3 pending tasks
+
+- [ ] Task 1: multiple independent replications, disjoint reproducible seed bundles,
+  replication-level metrics, structured results and automated tests.
+- [ ] Task 2: 95% Student's t intervals, sample variance/standard error,
+  beta-based replication counts and numerical tests; depends on Task 1.
+
+No replication/inference module is present on main. Proposed interfaces and
+dependencies are documented in [TEAM_HANDOFF.md](TEAM_HANDOFF.md#15-week-3-team-task-separation).
+
+## Person 3 Week 3 pending tasks
+
+- [ ] Task 1: extend the existing notebook with the latest Event Graph,
+  assumptions/distributions, metric explanations, executable examples and interfaces
+  for future statistics.
+- [ ] Task 2: review/improve existing 2D visualization; verify controls and
+  direct/CSV replay across both policies/modes, adding appropriate regressions.
+
+Preserve initial PR #4/#8 work. Do not automatically restore PR #11 enhancements.
+
+## Following development stage
+
+- [ ] Fleet/demand experiments and policy comparisons: Person 1 orchestrates;
+  Person 2 owns statistical methods/analysis; Person 3 presents results.
+- [ ] Factor analysis: Person 2, with Person 1 integrating configurations.
+- [ ] Statistical notebook integration: Person 3, after Person 2's results.
+- [ ] Final report: Person 1 coordinates; all contribute.
+- [ ] Final presentation: Person 3 leads; all contribute.
+- [ ] Final integration/submission verification: Person 1 leads; all review.
+
+## Final submission requirements
+
+- [ ] Review separate team PRs and verify the integrated code, dependencies and CI.
+- [ ] Complete reproducible notebook/results, final report and presentation by
+  **December 16, 2026**, checking the instructor's submission rubric.
+
+[PROJECT_REQUIREMENTS.md](PROJECT_REQUIREMENTS.md) is the detailed checklist.
+This documentation PR implements none of the pending tasks and must not be merged
+automatically. History grows with events; existing stress tests are bounded
+(the longest horizon is 1440 simulated minutes). CSV exports contain raw data.

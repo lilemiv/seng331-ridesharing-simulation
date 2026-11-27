@@ -16,8 +16,8 @@ SimPy 4.1.x and later 4.x versions; retain the verified versions when reproducin
 the handoff output. On macOS/Linux, use `.venv/bin/python`. No test runner package
 or display is needed for tests, but full discovery requires importable Tkinter.
 The viewer additionally needs Tcl/Tk and a graphical desktop (section 7).
-SimPy (`simpy>=4.1,<5`) is the only pip dependency. Do not copy another member's
-`.venv` directory.
+Requirements contain SimPy (`simpy>=4.1,<5`) and Matplotlib for existing plots.
+Do not copy another member's `.venv` directory.
 
 ## 2. Configuration
 
@@ -29,12 +29,17 @@ All durations and time limits are in minutes.
 | `mean_interarrival_minutes` | `0.75` | Positive finite exponential mean (45 seconds) |
 | `duration_minutes` | `60.0` | Positive finite exclusive simulation horizon |
 | `random_seed` | `42` | Integer seed; booleans are rejected |
-| `fleet_size` | `20` | Positive integer number of anonymous drivers |
+| `fleet_size` | `20` | Positive integer number of named drivers |
 | `mean_patience_minutes` | `5.0` | Exponential mean, inclusive range 3-8 |
 | `pickup_min_minutes` | `2.0` | Positive finite uniform lower bound |
 | `pickup_max_minutes` | `8.0` | Finite upper bound, at least the lower bound |
 | `trip_mean_minutes` | `10.0` | Positive finite arithmetic trip mean |
 | `trip_sigma` | `0.5` | Finite nonnegative log-scale standard deviation |
+| `city_width`, `city_height` | `10.0`, `10.0` | Positive finite abstract city bounds |
+| `dispatch_policy` | `"random"` | `"random"` or `"nearest"` |
+| `pickup_mode` | `"uniform"` | `"uniform"` or `"distance_aware"` |
+| `pickup_speed_units_per_minute` | `1.0` | Positive finite pickup speed |
+| `pickup_base_delay_minutes` | `1.0` | Nonnegative finite overhead |
 
 `trip_mu` is derived as `log(trip_mean_minutes) - trip_sigma^2 / 2`. The sampler
 uses `exp(Normal(mu, sigma^2))`, whose arithmetic mean is
@@ -42,11 +47,15 @@ uses `exp(Normal(mu, sigma^2))`, whose arithmetic mean is
 The default mu is approximately 2.177585. Sigma zero is a deterministic limiting
 case. Pickup bounds may be equal. Individual patience samples can be outside 3-8.
 
-The four local RNGs use `abs(random_seed) + offset`, where offsets 0, 1, 2, and 3
-belong to arrivals, patience, pickup, and trips. Negative seeds normalize to their
-absolute value, matching Python's integer seeding behavior. All four streams stay
-distinct. New service samples never consume arrival or patience randomness.
-Pickup is sampled at assignment; trip duration is sampled when the trip starts.
+The original four local RNGs use `abs(random_seed) + offset`, where offsets
+0/1/2/3 belong to arrivals, patience, pickup and trips. Negative seeds normalize
+to their absolute value, matching Python's integer seeding behavior. These
+streams stay distinct. Service samples never consume arrival/patience randomness.
+Additional offsets 4/5/6/7 are initial driver locations, customer pickups,
+destinations and random dispatch. All eight seeds must be disjoint across future
+independent replications. Uniform pickup is sampled at assignment; distance-aware
+pickup uses assignment distance without consuming the uniform pickup RNG.
+Trip duration is sampled when the trip starts.
 Different parameters can change who receives service even when arrivals and
 patience samples remain identical.
 
@@ -93,7 +102,8 @@ waiting -> abandoned
 ```
 
 Pickup represents the assigned driver traveling to the customer. Pickup completion
-is the customer's boarding/trip start. No route or coordinates are modeled yet.
+is the customer's boarding/trip start. Driver and customer coordinates are modeled;
+routes and continuous movement are not.
 A driver is occupied continuously from assignment through trip completion.
 Patience applies only before assignment; exact assignment/expiry ties favor expiry.
 
@@ -148,6 +158,10 @@ customer returning to the queue.
 | `abandonment_time` | Customer leaves before assignment |
 | `status` | Current waiting/in_service/completed/abandoned state |
 | `service_stage` | Read-only current pickup/trip stage, otherwise `None` |
+| `assigned_driver_id` | Named driver ID, or `None` before assignment |
+| `pickup_x`, `pickup_y` | Customer pickup coordinates |
+| `destination_x`, `destination_y` | Customer destination coordinates |
+| `assignment_distance` | Read-only assignment distance, otherwise `None`; outside `asdict()` |
 
 All timestamps are relative to simulation start, in minutes. `None` means an event
 has not occurred. Zero is a valid timestamp. A sampled duration is not evidence of
@@ -231,7 +245,8 @@ then normalize by observation duration. Fleet utilization uses the corresponding
 B exposure normalized by fleet size and observation duration. This is time
 weighting, not an unweighted average of event rows. Use the initial/final markers
 and the same-time convention above; include unfinished exposure through the end.
-Per-driver utilization is unavailable without individual driver identities.
+Named assignment/release history now exists (section 8); pooled utilization is
+implemented. No per-driver utilization metric API is currently provided.
 
 Throughput uses completed trips over observation time. For customer outcomes,
 distinguish completion fraction, assignment fraction, abandonment fraction, and
@@ -325,44 +340,43 @@ they do not verify GUI rendering.
 This is an initial **schematic 2D prototype**, not a final polished bonus animation
 or a geographic driver movement simulation. Roads/buildings and customer positions
 are illustrative; stages change at events rather than through continuous motion.
-Crowded areas use overflow counts. There are no individual driver identities,
-geographic coordinates, destinations, routes, or random/nearest dispatch policies.
-Those need the future agreed model in section 8. Q(t)/B(t) plots, the final
-Jupyter Notebook, and further animation improvements remain pending. The corrected
-Event Graph already exists in [EVENT_GRAPH.md](EVENT_GRAPH.md) and above. Keep
-notebook organization and presentation logic outside the engine.
+Crowded areas use overflow counts. The engine provides named drivers, coordinates,
+destinations and random/nearest policies (section 8); the viewer displays schematic
+customer stages. Initial Q(t)/B(t) plots and the Version 1 notebook exist from
+PR #8. Notebook development, broader control/rendering verification and useful
+animation improvements remain pending. The latest dispatch Event Graph is in
+[EVENT_GRAPH.md](EVENT_GRAPH.md); its uniform-only pickup label needs a future
+mode-aware update. The embedded lifecycle diagram above describes default pickup.
+Keep notebook and presentation logic outside the engine.
 
-## 8. Proposed random/nearest dispatch extension (not implemented)
+## 8. Implemented Person 1 dispatch and spatial interfaces
 
-The instructor's random-versus-nearest comparison is still outstanding. Anonymous
-Resource slots cannot distinguish drivers. Agree ownership and location semantics
-before extending the engine; the present Resource remains unchanged.
+PR #7 implements driver identities/locations and both dispatch policies; PR #10
+adds optional distance-aware pickup. Both survive the PR #12 revert.
+[DISPATCH_DESIGN.md](DISPATCH_DESIGN.md) documents the complete contract.
 
-1. Introduce individual driver records: stable ID, availability, current location,
-   and assigned request ID. Define initial fleet locations and coordinate/distance
-   units. Add pickup locations and, if vehicles move after trips, trip destinations
-   to request data using independent location RNG streams.
-2. Keep Resource as the FIFO capacity gate. After a customer wins acquisition
-   before its deadline, choose a free driver and mark it occupied atomically,
-   without yielding between token acquisition and reservation. Maintain a one-to-one
-   invariant between held slots and reserved driver records. Avoid adding a second
-   independent waiting queue that can conflict with FIFO ordering.
-3. Isolate selection behind a policy interface such as
-   `select_driver(request, available_drivers, policy_rng)`. Random selection draws
-   from a stable ID-sorted available set with its own RNG. Nearest selection uses
-   the agreed distance function and driver ID as a deterministic distance tie-break.
-4. Record the assigned driver ID and position changes for later consumers. At trip
-   completion update location, return the driver to the available set, then release
-   the Resource token without an intervening yield. Cancellation and exact deadline
-   ties must reserve no individual driver, or undo any reservation atomically.
-5. Agree whether pickup/trip durations stay sampled independently or depend on
-   distance/speed. Euclidean distance, road-network distance, and routing are
-   different models; this handoff chooses none of them.
-6. Add policy/unit/integration tests for unique reservation, driver-location updates,
-   tie-breaking, seed isolation, resource consistency, and cancellation. The other
-   members' experiment code can then compare policies using a common scenario
-   definition and controlled randomness. Do not equate same seeds with matching
-   per-customer service draws when policies change the order stages begin.
+- Resource remains the FIFO capacity gate. After a valid grant strictly before
+  expiry, an idle driver is selected/reserved without yielding. Exact deadline
+  ties reserve no identity.
+- Frozen `Driver(driver_id, x, y, assigned_request_id)` snapshots use IDs
+  `1..fleet_size`; `is_available` is derived from assignment.
+  `sim.drivers`, `initial_drivers`, `available_drivers` and `busy_drivers`
+  are tuple snapshots. Reacquire views after events.
+- Random selection uses an ID-sorted idle set and offset-7 RNG; nearest uses
+  Euclidean distance to pickup, breaking exact ties by lowest driver ID.
+- Driver coordinates are last known positions. Completion updates to destination
+  before releasing capacity; unfinished trips do not move to future destinations.
+- `sim.driver_history` is a separate tuple of immutable `DriverEvent` records:
+  `sequence, time, event_type, driver_id, request_id, x, y`.
+  Join assignment/release events to requests by ID/time. Its sequence is separate
+  from customer event sequence; customer CSV remains unchanged.
+- `request.assignment_distance` records distance in either pickup mode.
+  Uniform remains the default and ignores distance for duration. Optional
+  distance-aware pickup is overhead + distance / speed, without clipping to the
+  uniform bounds. Trips remain lognormal and route-independent.
+
+Existing API, timing RNG streams, event schema, metrics and replay are preserved.
+See [optional pickup details](docs/DISTANCE_AWARE_PICKUP.md).
 
 ## 9. Known limitations and checks
 
@@ -371,8 +385,9 @@ history checks on successful completion. It does not calculate performance metri
 Tests cover normal/high demand, small/large fleets, abandonment-heavy demand,
 simultaneous events, empty runs, horizons, reproducibility, and immutable history.
 
-Resource slots are anonymous; there is no spatial model, advanced policy, or
-per-driver trace. History storage grows with lifecycle events. Both output lists
+Resource capacity is paired with named drivers and a separate driver trace.
+Coordinates are abstract and do not define routes or continuous movement.
+History storage grows with lifecycle events. Both output lists
 are engine-owned mutable containers and must not be changed by consumers. Extreme
 trip parameters that overflow/underflow floating-point sampling raise `ValueError`;
 invariant violations raise `RuntimeError`. Discard failed runs and fix their input
@@ -382,21 +397,12 @@ enforced, so do not pass arbitrary nonnumeric objects.
 
 ## 10. Remaining group deliverables
 
-Steps 1-5 provide the completed engine and raw integration data. Person 1's Week 2
-infrastructure adds CI, presets, CSV export, and reliability coverage (section 12).
-
-Person 2's Week 2 `metrics.py`, `test_metrics.py`, queue delay, completed-customer
-system time, time-average Q/N, and pooled utilization are implemented (section 13).
-Statistical analysis, replications, warm-up, confidence intervals, beta analysis,
-and experiments remain future work. These are not missing Week 1 deliverables.
-
-Person 3 has delivered the corrected Event Graph and initial Tkinter 2D prototype,
-including event-history and CSV replay (section 7). Remaining work includes
-animation improvements, Q(t)/B(t) plots, the final Jupyter Notebook, and presentation.
-Final report coordination, experimental factor analysis, and the instructor's
-random-versus-nearest dispatch comparison remain group responsibilities.
-Driver/location/policy changes require a separate agreed scope. See the
-[requirements checklist](PROJECT_REQUIREMENTS.md#remaining-team-responsibilities).
+Person 2 retains the two Week 3 statistics tasks, and Person 3 retains the two
+notebook/visualization tasks. Their scope, proposed interfaces, dependencies and
+subsequent-stage ownership are in section 15 and the
+[requirements checklist](PROJECT_REQUIREMENTS.md). Initial plots, notebook and
+viewer are preserved. Replicated experiments, factor analysis, statistical
+notebook integration, final report and presentation remain planned work.
 
 ## 11. Week 2 integration compatibility review
 
@@ -417,11 +423,10 @@ and request records as read-only. Preserve equal-time sequence order and the
 exclusive horizon. Missing timestamps remain censored outcomes. CSV is a serialized
 snapshot, not a new source of lifecycle events or derived measurements.
 
-The current interface supports schematic event replay. It cannot support actual
-location-based vehicle motion because there are no driver identities, coordinates,
-routes, or destinations. Section 8 proposes an agreed future driver/location
-extension with independent random streams and atomic driver reservation/release.
-That proposal remains unimplemented; no dispatch policy is selected here.
+Customer event history supports schematic replay. Named drivers, coordinates,
+destinations and separate driver history also exist (section 8). They support
+future spatial views, but do not supply routes or continuous vehicle positions.
+Preserve the customer CSV schema when adding any spatial consumer.
 
 ## 12. Week 2 core infrastructure
 
@@ -432,10 +437,11 @@ assigned-customer queue delay, statistics module, and schematic viewer.
 
 Run `.\.venv\Scripts\python.exe -B -m unittest discover -v` (or
 `.venv/bin/python -B -m unittest discover -v` on macOS/Linux). Full discovery
-covers 134 tests: 70 core, 6 preset, 6 CSV, 9 bounded stress, 3 CLI regression,
-5 visualization, and 35 metrics tests. The one-day simulation is simulated time,
-not a real-time wait. SimPy is the only pip dependency; see section 7 for Tkinter
-requirements.
+passes 217 tests: 70 core, 6 preset, 6 CSV, 9 bounded stress, 3 CLI regression,
+5 visualization, 35 metrics, 48 dispatch and 35 distance-aware pickup tests,
+with zero failures, errors or skips. The one-day simulation is simulated time,
+not a real-time wait. Requirements contain SimPy and Matplotlib; see section 7
+for Tkinter requirements. Check dependency consistency with `python -m pip check`.
 
 `.github/workflows/python-tests.yml` runs the same discovery command on Python
 3.14 and Ubuntu after installing `requirements.txt`. Triggers are PRs targeting
@@ -595,8 +601,9 @@ same-time ordering, initial/final intervals, zero arrivals/windows, empty histor
 correct populations, precision, utilization bounds, censoring at exact horizons,
 non-mutation, reproducibility, legacy Week 1 imports/values, and CLI formatting.
 All 99 baseline tests remain unchanged: 70 core, 21 infrastructure, 3 Week 1 CLI,
-and 5 existing visualization tests. Full discovery passes 134 tests, zero failures
-or errors. Run `python -m unittest discover -v` in the project virtual environment.
+and 5 existing visualization tests. With the 35 metrics, 48 dispatch and 35
+optional pickup tests, current full discovery passes 217 tests, zero failures,
+errors or skips. Run `python -m unittest discover -v` in the project environment.
 
 Default `main.py` output is documented in README:
 86 arrivals = 58 completed + 20 active + 0 waiting + 8 abandoned;
@@ -605,9 +612,8 @@ N average 17.792, utilization 86.65%, abandonment 9.30%.
 
 These are descriptive finite-run metrics, with no steady-state or uncertainty
 claim. Week 3 warm-up/replications/confidence intervals/beta analysis/experiments
-remain unimplemented. Q(t)/B(t) plots are also pending; time-average metrics and
-the schematic viewer do not implement those plots. See section 10 for the
-remaining team responsibilities.
+remain pending in current main. Initial Q(t)/B(t) plots and the Version 1 notebook
+are present from PR #8; further notebook/visualization work is in section 15.
 
 ## 14. Optional distance-aware pickup
 
@@ -625,3 +631,108 @@ See [DISTANCE_AWARE_PICKUP.md](docs/DISTANCE_AWARE_PICKUP.md) for validation, ma
 random inputs, reproduction commands, example results, and limitations. Existing
 metrics and schematic replay need no code changes. Person 3 should later label the
 pickup edge in the Event Graph by mode; this change does not edit the graph/viewer.
+
+## 15. Week 3 team task separation
+
+### Repository recovery
+
+Local main was fast-forwarded to `f46ece5bd797a540a2ce1be4cace1ddb1244b85a`
+on November 27, 2026. Both [PR #11](https://github.com/lilemiv/seng331-ridesharing-simulation/pull/11)
+and its revert [PR #12](https://github.com/lilemiv/seng331-ridesharing-simulation/pull/12)
+are merged. Main contains revert `4a8cde3` and has the pre-PR #11 tree
+`98ac3b8590ba06ec25ded4c347f4ab6bf45bb128`. No open PR was found at recovery.
+The combined implementation was created, then reverted for team workflow reasons.
+It remains recoverable at `c5bc097`, its original branch and PR #11.
+Do not merge the old branch or replay the entire combined change.
+
+### 1. Week 1 completed tasks
+
+- [x] SimPy, Poisson arrivals, FIFO, abandonment, uniform pickup/lognormal trips,
+  lifecycle timestamps, deterministic streams and legacy CLI/API.
+
+### 2. Week 2 completed tasks
+
+- [x] Person 1: history/invariants, presets, CSV, stress coverage and GitHub Actions.
+- [x] Person 2: six finite-run metrics, observation counts and numerical tests.
+- [x] Person 3: Event Graph, initial viewer, existing controls and direct/CSV replay.
+
+Initial Q(t)/B(t) plots and Version 1 notebook subsequently merged in PR #8 remain
+available. Preserve these prior contributions.
+
+### 3. Person 1 Week 3 completed tasks
+
+- [x] Driver identities/coordinates, customer pickups/destinations, random/nearest
+  dispatch, driver location updates, FIFO/abandonment and dispatch tests.
+- [x] Optional distance-aware pickup, default uniform mode and core/API compatibility.
+
+### 4. Person 2 Week 3 pending tasks
+
+- [ ] Task 1: independent replications, disjoint reproducible seed bundles,
+  structured replication metrics and tests.
+- [ ] Task 2: 95% Student's t intervals, sample variance/standard error,
+  beta-based replication count estimation and numerical tests.
+
+**Proposed interfaces, documentation only:** the future replication runner takes
+an immutable config or preset overrides, master seed, replication count and
+starting replication ID. Return one structured record per independent run with
+ID, full config, base/eight stream seeds, horizon, customer observation counts
+and unrounded metric outcomes. Use existing engine/metric APIs. Do not pool
+customers across runs or treat `SampleMean.count == 0` as an observed zero.
+
+A possible bundle allocation is nonnegative base `abs(master_seed) + 8 * id`
+and offsets 0..7. Person 2 must specify ID uniqueness across continued batches,
+test nonoverlap/reproducibility, and avoid positive/negative seed aliasing.
+This proposed contract is not an implemented replication API.
+
+Inference depends on those independent replication outcomes. Proposed inputs:
+a metric series and confidence/precision settings. Proposed outputs: valid sample
+count, mean, sample variance, SD, SE, t degrees of freedom, interval bounds and
+half-width, with explicit missing/insufficient/zero-variance behavior.
+Beta planning should report pilot size, definition/units, target precision,
+required total/additional replications and any limit/unreachable case.
+Agree the instructor's beta definition before implementation; no convention is
+silently selected here.
+
+No replication/inference modules or placeholders are present. Select and declare
+any Student's t numerical dependency in Person 2's PR; current engine/metrics
+require no statistical package. Task 2 follows Task 1's reviewed result contract.
+
+### 5. Person 3 Week 3 pending tasks
+
+- [ ] Task 1: develop the existing notebook with latest Event Graph,
+  assumptions/distributions, metrics, executable examples and future statistics.
+- [ ] Task 2: review/improve animation; verify Play/Pause/Restart/speed and
+  direct/CSV replay for both policies/modes; add regression tests.
+
+Use `normalize_events`, `load_csv`, `ReplayState` and `CityViewer` from section 7.
+Preserve customer schema and equal-time ordering. Spatial views can use section
+8's separate driver/request data; the viewer currently uses schematic positions.
+
+Preserve initial notebook cells and `plot_q_b(sim.event_history)`. Notebook
+statistical sections should consume Person 2's future records rather than
+duplicate inference. Explanations/examples and visualization work can proceed now;
+actual statistical integration follows Person 2's reviewed results.
+Declare notebook execution tooling in the future PR. Do not import absent
+statistics modules, add placeholders or automatically restore PR #11 enhancements.
+
+### 6. Following development stage
+
+- [ ] Fleet/demand experiments and random-versus-nearest comparisons:
+  Person 1 owns orchestration/integration; Person 2 owns statistical analysis.
+- [ ] Factor analysis: Person 2, with Person 1's configuration support.
+- [ ] Statistical notebook integration: Person 3, after Person 2's results.
+- [ ] Final report: Person 1 coordinates; Person 2 supplies methods/analysis;
+  Person 3 supplies figures/notebook content.
+- [ ] Final presentation: Person 3 leads; all contribute.
+- [ ] Final integration/submission verification: Person 1 leads; all review.
+
+### 7. Final submission requirements
+
+- [ ] Complete separately reviewed team PRs; verify tests, dependencies, CI,
+  notebook reproducibility and visualization for the integrated version.
+- [ ] Complete report, notebook/results and presentation by **December 16, 2026**,
+  checking instructor format/rubric and submission contents.
+
+Create fresh branches from up-to-date main; scope each teammate PR to assigned
+tasks. This documentation PR implements no pending work and must not be merged
+automatically.
