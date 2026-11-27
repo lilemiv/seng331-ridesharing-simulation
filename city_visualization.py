@@ -138,12 +138,13 @@ class CityViewer:
     WIDTH, HEIGHT = 940, 590
     # Named schematic areas, not geographic sites.
     ZONES = {
-        "waiting": (80, 86, 280, 224, "WAITING / ARRIVALS"),
-        "pickup": (335, 86, 535, 224, "PICKUP"),
-        "trip": (590, 86, 850, 224, "ON TRIP"),
+        "waiting": (80, 86, 280, 224, "WAITING"),
+        "pickup": (335, 86, 535, 224, "ASSIGNED: PICKUP"),
+        "trip": (590, 86, 850, 224, "ASSIGNED: ON TRIP"),
         "completed": (94, 338, 395, 487, "COMPLETED"),
         "abandoned": (525, 338, 838, 487, "ABANDONED"),
     }
+
 
     def __init__(self, root: tk.Tk, events: list[ReplayEvent]) -> None:
         self.root = root
@@ -175,8 +176,23 @@ class CityViewer:
         self.play_button.pack(side="left", padx=(0, 8))
         ttk.Button(controls, text="Restart", command=self.restart).pack(side="left", padx=(0, 12))
         ttk.Label(controls, text="Speed (sim min / sec):").pack(side="left")
-        ttk.Scale(controls, from_=0.5, to=20, variable=self.speed, orient="horizontal",
-                  length=170).pack(side="left", padx=8)
+        
+        self.speed_label = ttk.Label(controls, text=f"{self.speed.get():.1f}")
+
+        ttk.Scale(
+            controls,
+            from_=0.5,
+            to=20,
+            variable=self.speed,
+            orient="horizontal",
+            length=170,
+            command=lambda value: self.speed_label.configure(
+                text=f"{float(value):.1f}"
+            )
+        ).pack(side="left", padx=8)
+
+        self.speed_label.pack(side="left", padx=5)
+
         ttk.Label(controls, textvariable=self.time_var).pack(side="right")
         ttk.Label(base, textvariable=self.summary_var, font=("Arial", 10, "bold")).pack(anchor="w")
         ttk.Label(base, textvariable=self.detail_var).pack(anchor="w", pady=(2, 0))
@@ -226,17 +242,51 @@ class CityViewer:
                               font=("Arial", 10, "bold"), fill="#3B4B57")
             c.create_text(x2 - 15, y1 + 15, text=str(len(ids)), anchor="e",
                           font=("Arial", 11, "bold"), fill="#182B33")
-        legend = "Yellow: waiting  •  Blue: pickup  •  Purple: trip  •  Green: completed  •  Red: abandoned"
+        
+        legend = "Yellow: Waiting | Blue: Assigned (Pickup) | Purple: Assigned (Trip) | Green: Completed | Red: Abandoned"
         c.create_text(self.WIDTH / 2, 565, text=legend, fill="#354B54", font=("Arial", 10))
         ev = self.state.event
         if ev is not None:
             self.time_var.set(f"Simulation: {ev.time:.2f} / {self.events[-1].time:.2f} min")
             self.summary_var.set(
-                f"Arrivals: {ev.arrivals}   Waiting: {ev.waiting}   Busy drivers: {ev.busy_drivers}   "
+                f"Arrivals: {ev.arrivals}   Waiting: {ev.waiting}   Assigned: {ev.busy_drivers}   "
                 f"Completed: {ev.completed}   Abandoned: {ev.abandoned}"
             )
             req = "" if ev.request_id is None else f" · customer #{ev.request_id}"
             self.detail_var.set(f"Event {ev.sequence + 1}/{len(self.events)}: {ev.event_type}{req}")
+
+            transitions = {
+                "driver_assignment": ("waiting", "pickup"),
+                "pickup_completion": ("pickup", "trip"),
+                "trip_completion": ("trip", "completed"),
+                "abandonment": ("waiting", "abandoned"),
+            }
+
+            if ev.event_type in transitions and self.playing:
+                source, target = transitions[ev.event_type]
+                a = self.ZONES[source]
+                b = self.ZONES[target]
+
+                sx, sy = (a[0] + a[2]) / 2, a[3]
+                tx, ty = (b[0] + b[2]) / 2, b[3]
+
+                marker = c.create_oval(
+                    sx - 6, sy - 6, sx + 6, sy + 6,
+                    fill=STATUS_COLORS[target],
+                    outline="white", width=2
+                )
+
+                def move_marker(frame=0):
+                    if not c.type(marker):
+                        return
+                    if not self.playing or frame >= 12:
+                        c.delete(marker)
+                        return
+                    c.move(marker, (tx - sx) / 12,
+                           (ty - sy) / 12)
+                    c.after(25, move_marker, frame + 1)
+
+                move_marker()
 
     @staticmethod
     def draw_building(c: tk.Canvas, x: int, y: int) -> None:

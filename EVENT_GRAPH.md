@@ -1,53 +1,92 @@
-# Event Graph — code-aligned model
 
-The diagram distinguishes **recorded lifecycle events** (rounded nodes) from
-**internal SimPy decisions/state** (diamonds/rectangles). The labels in parentheses
-match `SimulationEvent.event_type`; internal capacity checks, queue entries, and
-driver release are **not** separate exported event types.
+# Event Graph — Ride-Sharing Simulation
+
+## 1. Overview
+
+This event graph represents the current discrete-event simulation model, including FIFO customer scheduling, random and nearest driver selection, customer abandonment, pickup, and trip completion.
+
+## 2. Event Graph
 
 ```mermaid
 flowchart TD
     start([Simulation Start])
-    arrival([Request Arrival])
-    capacity{"FIFO driver request granted<br/>strictly before patience deadline?"}
-    waiting["FIFO waiting for resource<br/>Patience: exponential, mean 5 min"]
-    outcome{"Assignment granted<br/>before deadline?"}
+    arrival([Customer Arrival])
+    request["Request driver capacity"]
+    outcome{"Capacity granted strictly before patience deadline?"}
+    policy{"Dispatch Policy"}
+    random["Select random available driver"]
+    nearest["Select nearest available driver"]
     assign([Driver Assignment])
     abandon([Customer Abandonment])
-    pickupDone([Pickup Completion])
-    tripDone([Trip Completion])
-    endEvent([Simulation End at exclusive horizon])
+    pickup([Pickup Completion])
+    trip([Trip Completion])
+    release["Release driver and update position"]
+    finish([Simulation End])
 
-    start -->|"Generate first arrival after<br/>exponential interarrival"| arrival
-    arrival -->|"Schedule next arrival after<br/>exponential interarrival, mean 0.75 min"| arrival
-    arrival --> capacity
-    capacity -->|"Yes"| assign
-    capacity -->|"No: await grant or patience expiry"| waiting
-    waiting --> outcome
-    outcome -->|"Granted strictly before deadline"| assign
+    start -->|"First interarrival time"| arrival
+    arrival -->|"Exponential interarrival time"| arrival
+    arrival --> request
+    request -->|"FIFO queue: wait for grant or expiry"| outcome
+    outcome -->|"Yes"| policy
     outcome -->|"Expiry first or exact tie"| abandon
-    assign -->|"Pickup takes uniform 2-8 min;<br/>driver held"| pickupDone
-    pickupDone -->|"Trip takes lognormal duration;<br/>arithmetic mean 10 min; driver held"| tripDone
-    tripDone -.->|"Driver released by resource context;<br/>next FIFO waiter may be granted"| waiting
+    policy -->|"Random"| random
+    policy -->|"Nearest"| nearest
+    random --> assign
+    nearest --> assign
+    assign -->|"Uniform pickup duration: 2-8 min"| pickup
+    pickup -->|"Lognormal trip duration: mean 10 min"| trip
+    trip --> release
+    release -.->|"Next FIFO request may receive capacity"| outcome
+    start -->|"Configured simulation horizon"| finish
 ```
 
-The `simulation_end` event is recorded once the configured simulation horizon
-(default 60 minutes) is reached; it is not a customer transition in the graph.
-Events at the exact horizon are excluded. `simulation_start` is recorded at time 0.
-Arrivals proceed independently of customers already waiting or in service.
+## 3. Event Descriptions
 
-At arrival a customer samples an exponential patience duration. A SimPy Resource
-with capacity `fleet_size` processes driver requests in FIFO order. If the driver
-request is granted strictly before the customer's patience deadline, the engine
-records `driver_assignment` and the customer remains `in_service` through pickup
-and trip. Otherwise the engine records `abandonment`; exact deadline ties favor
-abandonment. `pickup_completion` marks the beginning of the trip, and
-`trip_completion` marks completion and precedes the driver's resource release.
-The release is an internal SimPy action, not an additional history event.
+| Event | Description |
+|---|---|
+| Simulation Start | Initializes the simulation at time zero. |
+| Customer Arrival | Generates a new customer request. |
+| Driver Assignment | Assigns an available driver after a valid FIFO capacity grant. |
+| Customer Abandonment | Occurs when customer patience expires before assignment or at an exact deadline tie. |
+| Pickup Completion | Marks the end of pickup and the beginning of the trip. |
+| Trip Completion | Marks the successful completion of the customer journey. |
+| Simulation End | Records the final state at the configured simulation horizon. |
 
-There are no driver IDs, street coordinates, routes, or geographic dispatch rules
-in the current engine. A visualization consuming `event_history` can accurately
-replay **customer statuses and service stages**; any positions on a 2D city
-illustration must be labeled schematic rather than actual simulated trajectories.
-All durations above are configurable defaults, measured in minutes.
+## 4. Dispatch Policies
 
+- Random: Selects an available driver uniformly at random.
+- Nearest: Selects the available driver with the minimum Euclidean distance to the customer pickup location.
+- Equal-distance ties are resolved using the lowest driver ID.
+- Both policies preserve FIFO customer scheduling.
+
+## 5. Simulation Rules
+
+- Customer interarrival times follow an exponential distribution with a default mean of 0.75 minutes.
+- Customer patience follows an exponential distribution with a default mean of 5 minutes.
+- Pickup duration follows a uniform distribution between 2 and 8 minutes.
+- Trip duration follows a lognormal distribution with an arithmetic mean of 10 minutes.
+- A driver remains busy throughout pickup and trip.
+- After trip completion, the driver becomes available at the customer's destination.
+- Events scheduled exactly at the simulation horizon are excluded.
+- Unfinished customers retain their current status at the simulation horizon.
+
+## 6. Event History and Visualization
+
+The customer event history records simulation start, arrival, driver assignment, abandonment, pickup completion, trip completion, and simulation end.
+
+Driver assignment and release are also tracked separately in the driver history.
+
+The visualization displays four customer status categories:
+
+- Waiting
+- Assigned (Pickup and On Trip)
+- Completed
+- Abandoned
+
+Q(t) represents the number of waiting customers.
+
+B(t) represents the number of busy drivers.
+
+The engine supports driver IDs and abstract planar coordinates. However, the current 2D replay uses schematic positions and illustrative transition effects rather than actual geographical routes.
+
+All durations and simulation parameters are configurable.
