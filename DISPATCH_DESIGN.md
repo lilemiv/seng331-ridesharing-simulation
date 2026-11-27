@@ -1,11 +1,13 @@
 # Week 3 driver dispatch
 
-This document describes Person 1's implemented driver/location/dispatch contract,
-merged in PR #7. It supplements [README.md](README.md),
-[TEAM_HANDOFF.md](TEAM_HANDOFF.md), and [PROJECT_REQUIREMENTS.md](PROJECT_REQUIREMENTS.md).
-The implementation chronology below records the original dispatch delivery;
-current full-suite counts and integrated statistics/experiments/plots/notebook
-verification are in [the Weeks 1–3 audit](docs/WEEKS1_3_AUDIT.md).
+This document covers Person 1's driver/location/dispatch work. It supplements
+[README.md](README.md), [TEAM_HANDOFF.md](TEAM_HANDOFF.md), and
+[PROJECT_REQUIREMENTS.md](PROJECT_REQUIREMENTS.md) without editing files in the
+separate [Week 2 cleanup PR #6](https://github.com/lilemiv/seng331-ridesharing-simulation/pull/6).
+Their anonymous-driver descriptions describe the Week 2 baseline; use the contract
+below for Week 3 dispatch. This feature does not depend on that PR's source code.
+Statistics, experiments, plots, notebook, Event Graph, and animation are outside
+this change.
 
 ## Architecture
 

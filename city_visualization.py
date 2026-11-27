@@ -144,7 +144,6 @@ class CityViewer:
         self.position = 0
         self.playing = False
         self.after_id: str | None = None
-        self.animation_after_id: str | None = None
         self.speed = tk.DoubleVar(value=5.0)  # simulated minutes per real second
         self.time_var = tk.StringVar(value="Simulation: 0.00 min")
         self.summary_var = tk.StringVar(value="No events processed")
@@ -192,7 +191,6 @@ class CityViewer:
         self.draw()
 
     def draw(self) -> None:
-        self.stop_animation()
         c = self.canvas
         c.delete("all")
         c.create_rectangle(0, 0, self.WIDTH, self.HEIGHT, fill="#E8F0F0", outline="")
@@ -266,11 +264,10 @@ class CityViewer:
                 marker = c.create_oval(
                     sx - 6, sy - 6, sx + 6, sy + 6,
                     fill=STATUS_COLORS[target],
-                    outline="white", width=2, tags="transition"
+                    outline="white", width=2
                 )
 
                 def move_marker(frame=0):
-                    self.animation_after_id = None
                     if not c.type(marker):
                         return
                     if not self.playing or frame >= 12:
@@ -278,15 +275,9 @@ class CityViewer:
                         return
                     c.move(marker, (tx - sx) / 12,
                            (ty - sy) / 12)
-                    self.animation_after_id = c.after(25, move_marker, frame + 1)
+                    c.after(25, move_marker, frame + 1)
 
                 move_marker()
-
-    def stop_animation(self) -> None:
-        if self.animation_after_id is not None:
-            self.canvas.after_cancel(self.animation_after_id)
-            self.animation_after_id = None
-        self.canvas.delete("transition")
 
     @staticmethod
     def draw_building(c: tk.Canvas, x: int, y: int) -> None:
@@ -317,7 +308,6 @@ class CityViewer:
     def toggle(self) -> None:
         if self.playing:
             self.playing = False
-            self.stop_animation()
             self.play_button.configure(text="Play")
             if self.after_id is not None:
                 self.root.after_cancel(self.after_id)
@@ -343,7 +333,6 @@ class CityViewer:
         self.draw()
 
     def close(self) -> None:
-        self.stop_animation()
         if self.after_id is not None:
             self.root.after_cancel(self.after_id)
         self.root.destroy()

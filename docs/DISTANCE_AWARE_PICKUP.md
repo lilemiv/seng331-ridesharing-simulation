@@ -96,10 +96,9 @@ inputs. Distance-aware mode can change release times and downstream outcomes.
 With one driver or only one available candidate, a policy difference may disappear.
 
 These guarantees support matched diagnostics, not statistical independence across
-replications. The integrated `replications.py` runner avoids overlapping seed bundles
+replications. A future replication runner must avoid overlapping seed bundles
 `abs(seed)+0..7`; consecutive base seeds reuse stream seeds, and `s`/`-s` duplicate
-runs. Person 2's runner, confidence intervals and experiment design are now
-implemented; see [statistical analysis](STATISTICAL_ANALYSIS.md).
+runs. Replications, confidence intervals, and experiment design remain Person 2 work.
 
 ## Reproduce the four combinations
 
@@ -162,21 +161,19 @@ Run `.\.venv\Scripts\python.exe -B -m unittest discover -v` on Windows.
 The original 182 tests remain unchanged; 35 new tests cover validation, formula,
 zero pickup, both policies/modes, RNGs, capacity, FIFO, abandonment, destination
 updates, conservation, reproducibility, history/CSV replay, metrics, and horizons.
-At the original PR #10 delivery, full discovery passed 217 tests. The 20 uniform-mode comparisons against the
+Full discovery passes 217 tests. The 20 uniform-mode comparisons against the
 pre-change engine match all legacy request/event fields, driver histories, RNG
 states, CSV bytes, metrics, and CLI output; only configuration gains three fields.
 
-Person 2's integrated replication/experiment runner uses configuration mode/policy/
-seed and `assignment_distance` alongside the existing metric APIs. See
-[current verification](WEEKS1_3_AUDIT.md) for the full 268-test suite and 400-run
-replicated policy/mode analysis; the historical examples above remain diagnostics.
+Person 2 can use configuration mode/policy/seed and `assignment_distance` alongside
+the existing metric APIs. No statistical runner, confidence intervals, plots, or
+new spatial-metric module is added.
 
 Person 3 can continue passing `event_history` to the unchanged schematic viewer.
-The current Event Graph labels pickup as configurable Uniform(a,b) or
-overhead + distance/speed and allows zero delay. Driver travel visualization still
+The future Event Graph update should label pickup as configurable Uniform(a,b) or
+overhead + distance/speed and allow zero delay. Driver travel visualization still
 requires joining requests with driver history; continuous routes are not modeled.
-The integrated notebook and Event Graph now include both pickup models.
+This change does not modify the Event Graph, visualization, or notebook.
 
-PR #10 originally started from main `675637a` without editing cleanup PR #9.
-Both PRs are merged in audit baseline main `35f338c`; no unmerged branch was
-copied or overwritten during the Weeks 1–3 consolidation.
+PR #9's comment cleanup remains separate. This branch starts from main `675637a`
+and does not merge or edit the cleanup branch.
