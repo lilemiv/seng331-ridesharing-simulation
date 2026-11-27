@@ -1,218 +1,113 @@
-# Project 9: Ride-Sharing Dispatch in a City Zone
+# SENG 331 — Weeks 1–3 requirements
 
-## Ownership and scope
+Project: Ride-Sharing Dispatch in a City Zone. This checklist follows the supplied
+Weeks 1–3 request. Final deadline supplied: December 16, 2026. The original
+instructor schedule and exact beta definition are unavailable; the explicitly
+permitted absolute-half-width interpretation is documented, not presented as
+confirmed instructor wording. See [full audit](docs/WEEKS1_3_AUDIT.md) for every
+task's owner, original/final status, source and verification evidence.
 
-This repository implements the Weeks 1-2 simulation, performance statistics, and
-initial schematic 2D visualization for a three-person Modeling and Simulation
-with Python project. Core delivery target: November 27, 2026. The checked items
-below are implemented; the remaining team responsibilities are pending project
-requirements. Further driver/location/policy development requires a separately
-agreed scope.
+## Week 1 — core simulation (Person 1; tests/documentation shared)
 
-## Core simulation checklist
+- [x] Python/SimPy discrete-event engine with configurable environment/horizon.
+- [x] Poisson arrivals using exponential interarrival times.
+- [x] Configurable fleet, FIFO waiting, driver assignment and release.
+- [x] Exponential patience, pre-assignment abandonment and expiry-winning exact ties.
+- [x] Default Uniform(2,8) pickup and lognormal trip durations.
+- [x] Lifecycle records, stage timestamps, final statuses and immutable event history.
+- [x] Request conservation and driver capacity/ownership invariants.
+- [x] Reproducible local random streams without global RNG mutation.
+- [x] Automated unit and regression coverage; baseline outputs retained.
 
-- [x] Python and SimPy discrete-event engine; minutes throughout; GUI-independent core.
-- [x] Poisson arrivals with configurable mean interarrival time (default 0.75 min).
-- [x] Configurable anonymous driver capacity (default 20), using `simpy.Resource`.
-- [x] FIFO waiting, driver allocation, and release after service.
-- [x] Independent exponential patience sampled once per arrival (mean 5 min,
-  configurable within 3-8 min). Individual samples are not restricted to 3-8 min.
-- [x] Abandonment cancels queued requests. Expiry wins exact assignment ties.
-- [x] Uniform pickup duration (default 2-8 min; positive ordered limits configurable).
-- [x] Lognormal trip duration (default arithmetic mean 10 min, log-scale sigma 0.5).
-- [x] One driver remains occupied through pickup and trip; no abandonment after assignment.
-- [x] Request history, stage timestamps, sampled durations, and current status exposed.
-- [x] Separate seeded streams for arrivals, patience, pickup, and trip.
-- [x] Automated regression, resource, abandonment, stage, and horizon checks.
-- [x] Immutable, timestamped event snapshots for raw Q/N/B reconstruction.
-- [x] Automatic end-of-run invariants, actual FIFO customer view, and driver ownership checks.
-- [x] README, integration handoff, measurement definitions, and dispatch extension design.
-- [x] 70 core simulation tests, including invariants and event-history checks.
+## Week 2 — Person 1 infrastructure
 
-## Week 2 Person 1 infrastructure checklist
+- [x] Validated baseline, low/high demand, small/large fleet presets.
+- [x] Raw event CSV export with unchanged 12-field schema, precision and ordering.
+- [x] GitHub Actions PR/main CI and bounded stress tests.
+- [x] Integration documentation and event-history schema contract.
 
-- [x] GitHub Actions on PRs targeting main and pushes to main: Python 3.14,
-  requirements installation, unittest discovery, read-only contents permission,
-  and no external API secrets. View results under PR Checks or Actions > Python tests.
-- [x] Validated presets for baseline, low/high demand, and small/large fleets.
-  Defaults and random streams are unchanged; no experiment runner is introduced.
-- [x] Optional standard-library CSV export with all 12 actual event fields,
-  header-only empty history support, raw precision, and stable input order.
-- [x] 21 additional automated tests: 6 presets, 6 CSV, 9 stress tests. All 70
-  core tests are retained; full integrated discovery covers 134 tests (see below).
-- [x] Integration review confirms existing lifecycle and event fields are sufficient
-  for the current non-geographic Week 2 consumers; no engine refactor is required.
-- [x] README and TEAM_HANDOFF document usage, schema, CI, ownership, and limitations.
+## Week 2 — Person 2 performance metrics
 
-Presets use `scenarios.get_scenario(name, **overrides)`. Baseline is unchanged;
-low/high demand set mean interarrival to 1.5/0.25 minutes; small/large fleet set
-capacity to 5/40. All unspecified settings retain `SimulationConfig` defaults.
-Export explicitly with `event_export.export_event_history(sim.event_history, path)`;
-normal runs create no CSV. Column definitions are in TEAM_HANDOFF sections 5/12.
+- [x] Average queue delay: all assigned customers, including unfinished service.
+- [x] Average time in system: completed trips only.
+- [x] Time-average queue length and number in system.
+- [x] Utilization includes pickup and trip; abandonment uses all arrivals.
+- [x] Correct populations/denominators, post-event time weighting and horizon clipping.
+- [x] Independent controlled numerical examples and per-request exposure checks.
+- [x] Metric unit tests, precision, empty populations and legacy CLI compatibility.
 
-Verify locally with `.venv\Scripts\python.exe -B -m unittest discover -v`.
-Hosted CI execution is separate from local verification. SimPy (`simpy>=4.1,<5`)
-is the only pip dependency; full discovery also requires importable Tkinter but
-does not open a GUI. The viewer needs Tcl/Tk and a graphical desktop, as explained
-in [README.md](README.md#tkinter-2d-city-visualization).
+## Week 2 — Person 3 Event Graph and visualization
 
-## Week 2 Person 2 statistics checklist
+- [x] Code-aligned Event Graph, now including optional distance-aware pickup.
+- [x] Tkinter schematic 2D city visualization from actual event history.
+- [x] CSV replay and lifecycle state/count validation.
+- [x] Play/Pause, Restart and speed controls.
+- [x] Existing replay tests retained; transition callback cleanup regressions added.
+- [x] Real GUI render/control/direct-and-CSV replay tested across policies/modes.
 
-- [x] Dedicated `metrics.py` with modular calculations and no new dependencies.
-- [x] Queue delay: assignment minus arrival over assigned customers, including
-  unfinished pickup/trip; abandoned and still-waiting customers excluded.
-- [x] Completed system time: completion minus arrival over completed trips only.
-  Abandoned residence and unfinished/censored requests excluded.
-- [x] Both customer means expose the exact observation denominator via
-  `SampleMean.count` and the unrounded value via `.mean`; empty means are 0/count 0.
-- [x] Time-average Q and N from post-event states, divided by observation time T;
-  N includes waiting, pickup, and trip and excludes completed/abandoned customers.
-- [x] Driver utilization: B area / (configured fleet_size * T), including partial
-  pickup and trip exposure; waiting and abandoned customers do not occupy drivers.
-- [x] Shared integration sorts by time/sequence, handles simultaneous zero-duration
-  events, zero initial state, final exposure through T, and clipping after T.
-  Empty history and T=0 return zero; invalid numerical inputs raise `ValueError`.
-- [x] Abandonment fraction uses all arrivals as denominator, including unfinished
-  requests. Fractions [0,1] become percentages only for display; the retained
-  legacy `abandonment_rate_percent` dictionary key stays on the 0-100 scale.
-- [x] CLI displays all six metrics, minutes, and customer observation counts.
-  Calculations live only in `metrics.py`; the existing Week 1 import is preserved.
-- [x] 35 new tests cover exact Q/N/B integrals, all requested outcome/horizon
-  cases, independent per-request exposure checks, precision, bounds,
-  reproducibility, non-mutation, real engine outputs, CLI, and Week 1 compatibility.
-  All 99 baseline tests are retained; discovery passes 134 tests, zero failures/errors.
-- [x] README usage and TEAM_HANDOFF section 13 document API, formulas, populations,
-  denominators, horizon conventions, mathematical examples, and verification.
+Ordinary local GUI launch needs a complete Tcl/Tk installation. Missing init.tcl
+was diagnosed as environmental; real-window tests used temporary official matching
+CPython Tcl/Tk 9.0.4 libraries, without changing installed Python files.
 
-Use the ledger from a successful run and pass `sim.event_history`, `sim.env.now`,
-and `sim.config.fleet_size` to time-based metrics. Abandoned residence time is
-abandonment minus arrival, a separate population; no residence mean is exposed.
-Request means do not reconstruct an earlier horizon from later final statuses.
-The exclusive engine horizon and all core interfaces are unchanged. No statistics
-function rounds results. Run `python -m unittest discover -v` with the project
-virtual environment's Python.
+## Week 3 — Person 1 dispatch and integration
 
-Week 3 warm-up, replications, confidence intervals, beta analysis, and experiments
-remain future work. Results describe one finite run, not steady state.
+- [x] Individual driver IDs and bounded driver/pickup/destination coordinates.
+- [x] Random and nearest available-driver policies with Euclidean distance.
+- [x] Deterministic lowest-driver-ID nearest ties.
+- [x] Destination updates after trips and consistent resource/named-driver ownership.
+- [x] FIFO, abandonment, deadline and horizon compatibility.
+- [x] Dispatch tests and compatibility with metrics, CSV and schematic replay.
+- [x] Optional distance-aware pickup independently verified; uniform baseline preserved.
 
-## Week 2 Person 3 visualization checklist
+PR #7 dispatch, #10 pickup, #9 readability and #8 plots/notebook were already
+merged at preparation; their working behavior was retained.
 
-- [x] Corrected, code-aligned [Event Graph](EVENT_GRAPH.md), with the existing
-  README and handoff lifecycle diagrams preserved.
-- [x] Initial Tkinter 2D schematic city prototype in `city_visualization.py`.
-  `CityViewer` shows waiting, pickup, trip, completed, and abandoned customer
-  stages, aggregate counts, event details, Play/Pause, Restart, and speed control.
-- [x] Event-history integration: `normalize_events()` converts engine objects or
-  CSV dictionaries to ordered `ReplayEvent` rows; `ReplayState.apply()` validates
-  customer transitions and recorded counts without changing engine data.
-- [x] CSV replay through `load_csv(path)` and the `--csv` CLI option.
-- [x] Five tests for replay lifecycle, equal-time ordering, CSV round trips, and
-  invalid history; no GUI rendering is tested.
+## Week 3 — Person 2 statistical analysis
 
-Launch from the repository directory with `python city_visualization.py` for a
-default simulation replay or `python city_visualization.py --csv events.csv` for
-a complete export. Use the configured virtual environment's Python. The viewer
-requires `tkinter`/`ttk`, Tcl/Tk, and a display; headless replay tests need Tkinter
-to import but do not need a display. See [TEAM_HANDOFF.md](TEAM_HANDOFF.md#7-instructions-for-the-animation-and-notebook-developer)
-for interfaces and direct replay instructions.
+- [x] Reusable independent replication runner calling existing simulation/metric APIs.
+- [x] Disjoint eight-stream seed bundles, reproducibility and continuation IDs.
+- [x] All existing metrics plus mean assignment distance, full config/IDs/seeds/counts.
+- [x] Explicit missing populations, structured JSON/CSV export and automated tests.
+- [x] Configurable 95% Student-t means/SD/SE/bounds/half-width across replications.
+- [x] Insufficient sample size and zero variance handling, unrounded calculations.
+- [x] Independent numerical CI verification; no pooling of customer observations.
+- [x] Pilot beta estimator under the explicitly permitted absolute-half-width assumption.
+- [x] Recorded confidence, target, pilot n/missing, variance, total count and cap status.
+- [x] Minimal integer count using candidate t degrees of freedom; edge/numerical tests.
+- [x] Reproducible fleet/demand/policy/mode design: 20 cells × 20 runs, 240 min, seed 2026.
+- [x] Paired policy and single-factor contrasts with uncertainty for all seven outcomes.
+- [x] Separate uniform/distance-aware analyses; structural uniform timing equality explained.
+- [x] Committed reproducible JSON/CSV results, no single-seed significance claims.
 
-This completed prototype is separate from a final polished bonus animation.
-Its roads/buildings and positions are illustrative, and customers change areas
-at events. No individual driver IDs, actual coordinates, routes, continuous
-geographic movement, or driver selection policies are implemented. Crowded areas
-use overflow counts. Animation improvements and Q(t)/B(t) plots remain pending.
+## Week 3 — Person 3 plots and notebook
 
-## Lognormal configuration
+- [x] Q(t)/B(t) post-event plots and ordering/generator/render tests.
+- [x] Executable Jupyter Notebook preserving working baseline code.
+- [x] Faithfully embedded current Event Graph and model/distribution/SimPy explanations.
+- [x] Metric definitions, populations, denominators and independent exposure validation.
+- [x] Replication methodology, CIs, beta planning and experimental comparisons/results.
+- [x] Conclusions, model/statistical limitations and instructor-beta assumption.
+- [x] All 10 substantive code cells execute top-to-bottom; CI executes them too.
 
-For a duration `T = exp(Y)` with `Y ~ Normal(mu, sigma^2)`, the arithmetic mean
-is `E[T] = exp(mu + sigma^2 / 2)`. Configuration exposes `trip_mean_minutes` and
-`trip_sigma`; `trip_mu` is derived as `log(trip_mean_minutes) - trip_sigma^2 / 2`.
-Defaults give `mu = 2.177585093...`, `sigma = 0.5`, and arithmetic mean 10 minutes.
-The mean is a distribution property; a particular run's sample mean will vary.
-Sigma zero is supported as the deterministic limiting case. Extreme parameters
-that produce nonfinite or zero floating-point trip samples abort the run with
-`ValueError`; failed runs should be discarded.
+## Integrated verification
 
-## Integration contract
+- [x] Core → metrics → replications → CIs/beta/experiments.
+- [x] Dispatch → paired comparisons; original baseline metrics retained.
+- [x] Engine → direct replay and event CSV → replay, including real windows.
+- [x] Results → notebook and Event Graph → current architecture.
+- [x] Notebook uses public APIs and checks the committed 400-run report.
+- [x] All original 217 tests retained; final full suite 268 passed, 0 failed/errors/skipped.
+- [x] Isolated dependency environment, package consistency, diff/whitespace review.
 
-Create `RideSharingSimulation(SimulationConfig(...))`, call `run()` once, and read
-`simulation.requests` and `simulation.event_history`. Each successful run checks
-invariants automatically; `validate_invariants()` can also be called at a settled
-run boundary. The request list retains every arrival, including abandoned and
-unfinished requests, in request-ID order. Its entries are mutable `RideRequest`
-dataclasses maintained by the engine; consumers should treat them as read-only.
+## Separate final-submission work and unresolved source questions
 
-| Field/property | Meaning |
-| --- | --- |
-| `request_id` | Unique sequential integer, starting at 1 |
-| `arrival_time` | Time the request entered the system |
-| `patience_time` | Sampled waiting allowance, measured from arrival |
-| `service_start_time` | Driver assignment time, preserved from earlier steps |
-| `driver_assignment_time` | Read-only alias of `service_start_time` |
-| `pickup_start_time` | Pickup begins at assignment |
-| `pickup_completion_time` | Actual end of pickup |
-| `trip_start_time` | Actual trip start, equal to pickup completion |
-| `completion_time` | Actual trip end, preserved from earlier steps |
-| `trip_completion_time` | Read-only alias of `completion_time` |
-| `pickup_duration`, `trip_duration` | Sampled durations, set only when the respective stage starts |
-| `abandonment_time` | Actual departure time for an abandoned customer |
-| `status` | `waiting`, `in_service`, `completed`, or `abandoned` |
-| `service_stage` | Derived read-only property: `pickup`/`trip` while in service, otherwise `None` |
+- [ ] Final report and presentation.
+- [ ] Final polished bonus animation beyond the verified schematic prototype.
+- [ ] Confirm instructor's exact beta semantics against original assignment.
+- [ ] Confirm original instructor week-by-week schedule.
 
-All time fields use simulation minutes. `None` means the event has not occurred;
-never replace it with zero or infer completion from a sampled duration. Completed
-and abandoned are terminal statuses. `in_service` covers both service stages.
-For reconstructing past states, use timestamps; `status`/`service_stage` describe
-the current state at the end of a run. `dataclasses.asdict(request)` includes stored
-fields; read-only aliases and the stage property must be accessed separately.
-
-`waiting_requests` is a tuple of customers in actual Resource FIFO order.
-`driver_pool.queue` holds active SimPy resource request events, not the arrival
-history or customer records. `busy_driver_count` and `driver_pool.count` expose
-occupied capacity. The engine
-uses anonymous driver slots; it provides no driver IDs, coordinates, or routes.
-
-The horizon is exclusive: events exactly at `duration_minutes` are not processed.
-Runs stop with unfinished requests still waiting or holding a driver. Their future
-timestamps stay `None`; the engine does not drain service after the horizon.
-At individual internal SimPy events, a resource grant may precede its customer's
-timestamp update at the same clock time; inspect after all events at that time
-have settled when comparing the ledger with resource counts.
-
-Local RNG seeds are `abs(random_seed)` plus offsets 0, 1, 2, and 3 for arrivals,
-patience, pickup, and trips respectively. Normalization prevents negative seeds
-from collapsing different streams. The seed must be an integer. Service
-parameter changes preserve arrival/patience samples but can change later
-assignments and which requests reach each service stage.
-
-Run locally using `.venv\Scripts\python.exe main.py` and verify using
-`.venv\Scripts\python.exe -B -m unittest discover -v`.
-
-`event_history` contains immutable `SimulationEvent` snapshots, with ordered
-lifecycle events plus initial and horizon markers. Fields include time, sequence,
-event type, request ID/status/stage, arrivals, waiting Q, in-system N, busy drivers
-B, completed, and abandoned. Same-time events keep sequence order; use the last
-row at a time for the state until the next distinct timestamp. History supplies
-raw states only, not metrics or plots. See [TEAM_HANDOFF.md](TEAM_HANDOFF.md) for
-the complete schema, censoring rules, timing definitions, and consumer instructions.
-
-## Remaining team responsibilities
-
-- [ ] Person 2: further statistical analysis beyond the completed Week 2 metrics.
-- [ ] Person 2: multiple independent replications with an explicit seed strategy.
-- [ ] Person 2: confidence intervals and beta-based replication count estimation.
-- [ ] Person 2 / group: experimental factor analysis and scenario comparisons;
-  presets alone are not experiments.
-- [ ] Person 2 / Person 3: Q(t) and B(t) plots; history and time-average metrics
-  exist, but no plotting implementation is present.
-- [ ] Person 3: final Jupyter Notebook and presentation.
-- [ ] Person 3: remaining animation improvements and final polished bonus animation;
-  the initial Tkinter prototype and event-history integration are complete.
-- [ ] Group: final report and coordination of statistical plots/visualizations.
-- [ ] Instructor-required random-versus-nearest comparison, after an agreed
-  driver/location/policy extension is implemented.
-
-Individual driver identities, nearest-driver/advanced dispatch, and further engine
-features are deferred beyond this Step 5 handoff and require a separate approved
-scope. Their proposed design is documented in TEAM_HANDOFF.md; Resource has not
-been replaced and no selection policy or experiment has been implemented.
+These unchecked items are not represented as finished. The supplied request
+explicitly allows beta implementation under a documented assumption. No original
+schedule was available to establish the timing of separate final deliverables.
+No steady-state study, empirical road calibration or continuous geographic routes
+is claimed. Full evidence and remaining limitations are in the audit.

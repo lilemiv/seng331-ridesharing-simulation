@@ -33,7 +33,7 @@ flowchart TD
     policy -->|"Nearest"| nearest
     random --> assign
     nearest --> assign
-    assign -->|"Uniform pickup duration: 2-8 min"| pickup
+    assign -->|"Configured pickup: Uniform(2,8) baseline or overhead + distance/speed"| pickup
     pickup -->|"Lognormal trip duration: mean 10 min"| trip
     trip --> release
     release -.->|"Next FIFO request may receive capacity"| outcome
@@ -63,7 +63,9 @@ flowchart TD
 
 - Customer interarrival times follow an exponential distribution with a default mean of 0.75 minutes.
 - Customer patience follows an exponential distribution with a default mean of 5 minutes.
-- Pickup duration follows a uniform distribution between 2 and 8 minutes.
+- Baseline pickup follows Uniform(2,8) minutes. The optional distance-aware mode
+  uses overhead + assignment distance / speed and can be zero. It is an explicit
+  experimental assumption; baseline sampling and trip distribution are preserved.
 - Trip duration follows a lognormal distribution with an arithmetic mean of 10 minutes.
 - A driver remains busy throughout pickup and trip.
 - After trip completion, the driver becomes available at the customer's destination.

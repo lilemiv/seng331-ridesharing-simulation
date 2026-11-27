@@ -6,9 +6,10 @@ from simulation import RideSharingSimulation
 
 
 def plot_q_b(event_history):
-    times = [event.time for event in event_history]
-    queue = [event.waiting for event in event_history]
-    busy = [event.busy_drivers for event in event_history]
+    rows = sorted(event_history, key=lambda event: (event.time, event.sequence))
+    times = [event.time for event in rows]
+    queue = [event.waiting for event in rows]
+    busy = [event.busy_drivers for event in rows]
 
     fig, axes = plt.subplots(2, 1, figsize=(12, 8))
 
