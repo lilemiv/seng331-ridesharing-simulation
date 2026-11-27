@@ -14,7 +14,10 @@ python -m venv .venv
 The verified environment uses Python 3.14.7 and SimPy 4.1.2. Requirements permit
 SimPy 4.1.x and later 4.x versions; retain the verified versions when reproducing
 the handoff output. On macOS/Linux, use `.venv/bin/python`. No test runner package
-or graphical environment is needed. Do not copy another member's `.venv` directory.
+or display is needed for tests, but full discovery requires importable Tkinter.
+The viewer additionally needs Tcl/Tk and a graphical desktop (section 7).
+SimPy (`simpy>=4.1,<5`) is the only pip dependency. Do not copy another member's
+`.venv` directory.
 
 ## 2. Configuration
 
@@ -202,9 +205,9 @@ empty runs and services unfinished at the horizon.
 ## 6. Instructions for the statistics developer
 
 Use the following definitions consistently. Person 2's Week 2 implementation is
-now in `metrics.py`; section 13 documents its API and verification. Replications,
-comparisons, and uncertainty analysis remain future work. The Week 1 CLI
-correction and core infrastructure are already merged into the current baseline.
+in `metrics.py`; section 13 documents its API and verification. Integrate through
+those functions after a successful `run()`; `main.py` formats their results.
+Replications, comparisons, and uncertainty analysis remain future work.
 
 | Quantity | Definition and population |
 | --- | --- |
@@ -246,11 +249,88 @@ alone do not represent earlier animation frames. Sampled stage durations allow
 progress within a stage, but do not invent an observed completion beyond the run
 horizon. Keep the final frame consistent with unfinished and abandoned customers.
 
-There are no geographic coordinates, individual driver identities, routes, frame
-callbacks, plotting, notebooks, or animation implementation. Any schematic layout
-must be labeled as such. Geographic animation requires the future agreed location
-model. Keep notebook organization and presentation logic outside this engine.
-The final Event Graph documentation remains your group's separate deliverable.
+### Existing Tkinter viewer and launch commands
+
+`city_visualization.py` implements `CityViewer(root: tk.Tk,
+events: list[ReplayEvent])`. It projects recorded customer stages into schematic
+waiting, pickup, trip, completed, and abandoned areas. It shows aggregate counts,
+event details, and simulation time, with Play/Pause, Restart, and a speed slider
+(simulated minutes per real second). Equal-time events are applied in sequence
+order before drawing that timestamp's frame.
+
+Run from the repository directory with your configured Python:
+
+```powershell
+python city_visualization.py
+python city_visualization.py --csv events.csv
+```
+
+Replace `python` with `.\.venv\Scripts\python.exe` on Windows or
+`.venv/bin/python` on macOS/Linux to use the project environment. Without `--csv`,
+the entry point runs the default simulation once, normalizes its history, creates
+`tk.Tk()`, and starts the viewer's main loop. With `--csv`, it replays a prior
+export without running the engine. `main.py` is the console/statistics entry point.
+
+### Replay interfaces
+
+- `normalize_events(events: Iterable[object]) -> list[ReplayEvent]` accepts engine
+  event objects or dictionaries such as `csv.DictReader` rows. It converts time,
+  IDs, sequence, and counts to numeric values and preserves input order; it does
+  not sort. It requires nonnegative finite nondecreasing times, sequences exactly
+  `0..n-1`, known event types, absent request IDs only for boundary markers,
+  nonnegative counts, `N = Q + B`, and `arrivals = N + completed + abandoned`.
+  Empty input or missing first `simulation_start`/last `simulation_end` raises
+  `ValueError`. `ReplayEvent` contains sequence/time/type/request ID and six
+  counts; it does not retain `request_status` or `service_stage`.
+- `ReplayState.apply(event: ReplayEvent) -> None` consumes one normalized event
+  in order. It updates `.customers`, a request-ID-to-display-stage dictionary,
+  through waiting -> pickup -> trip -> completed, or waiting -> abandoned, and
+  stores the latest event in `.event`. It raises `ValueError` for duplicate
+  arrivals, invalid lifecycle transitions, or counts that disagree with history.
+  Stages are reconstructed from event types rather than final request status.
+- `load_csv(path: str | Path) -> list[ReplayEvent]` opens UTF-8 CSV (accepting a
+  BOM), passes `csv.DictReader` rows to `normalize_events()`, and returns the
+  normalized list. Use a complete export from section 12; a header-only export is
+  valid CSV but has no replayable events. Ordinary file/conversion errors propagate.
+
+After `sim.run()` returns, other team members can replay that exact run directly:
+
+```python
+import tkinter as tk
+from city_visualization import CityViewer, normalize_events
+
+# sim is the successful simulation from section 3.
+events = normalize_events(sim.event_history)
+root = tk.Tk()
+viewer = CityViewer(root, events)
+root.mainloop()
+```
+
+Alternatively, export `sim.event_history` using section 12 and launch the CSV
+command above, or pass `load_csv("events.csv")` to `CityViewer`. For a replay
+without opening a window, iterate over normalized events with a fresh
+`ReplayState()` and call `.apply(event)` for each row. These consumers do not
+modify engine records or recompute simulation outcomes.
+
+### Runtime requirements and limitations
+
+Python must include `tkinter`/`ttk` and its Tcl/Tk runtime. Install Tcl/Tk support
+through the Python distribution or operating system if it is missing; it is not
+a pip dependency. Opening the viewer requires an accessible graphical desktop.
+Headless environments can run the pure replay logic/tests if Tkinter is importable,
+but cannot create `tk.Tk()` without a display. The five existing viewer tests
+exercise replay state, ordering, CSV round trips, and validation without a window;
+they do not verify GUI rendering.
+
+This is an initial **schematic 2D prototype**, not a final polished bonus animation
+or a geographic driver movement simulation. Roads/buildings and customer positions
+are illustrative; stages change at events rather than through continuous motion.
+Crowded areas use overflow counts. There are no individual driver identities,
+geographic coordinates, destinations, routes, or random/nearest dispatch policies.
+Those need the future agreed model in section 8. Q(t)/B(t) plots, the final
+Jupyter Notebook, and further animation improvements remain pending. The corrected
+Event Graph already exists in [EVENT_GRAPH.md](EVENT_GRAPH.md) and above. Keep
+notebook organization and presentation logic outside the engine.
 
 ## 8. Proposed random/nearest dispatch extension (not implemented)
 
@@ -310,18 +390,20 @@ system time, time-average Q/N, and pooled utilization are implemented (section 1
 Statistical analysis, replications, warm-up, confidence intervals, beta analysis,
 and experiments remain future work. These are not missing Week 1 deliverables.
 
-Person 3 owns Event Graph development, Matplotlib/Pygame research, the initial 2D
-prototype, event-history visualization integration, notebooks, and presentation.
-The existing Event Graph is preserved. This infrastructure performs none of that
-research or implementation. Final report coordination and the future instructor
-dispatch comparison remain group responsibilities. Driver/location/policy changes
-require a separate agreed scope.
+Person 3 has delivered the corrected Event Graph and initial Tkinter 2D prototype,
+including event-history and CSV replay (section 7). Remaining work includes
+animation improvements, Q(t)/B(t) plots, the final Jupyter Notebook, and presentation.
+Final report coordination, experimental factor analysis, and the instructor's
+random-versus-nearest dispatch comparison remain group responsibilities.
+Driver/location/policy changes require a separate agreed scope. See the
+[requirements checklist](PROJECT_REQUIREMENTS.md#remaining-team-responsibilities).
 
 ## 11. Week 2 integration compatibility review
 
 No additional engine interface is required for the current statistics or event
 replay work. The existing contract supports both direct Python consumption and
-optional raw event CSV export; no statistics or visualization is computed here.
+optional raw event CSV export. `metrics.py` computes statistics, and
+`city_visualization.py` supplies the schematic viewer; the engine supplies raw data.
 
 | Consumer | Existing data | Access |
 | --- | --- | --- |
@@ -343,21 +425,17 @@ That proposal remains unimplemented; no dispatch policy is selected here.
 
 ## 12. Week 2 core infrastructure
 
-### Baseline, checks, and CI
+### Checks and CI
 
-Historical infrastructure delivery: its baseline was `main` commit `95fda6d`.
-PR #2 (the assigned-customer CLI queue-delay fix and its three tests) was open at
-that branch's creation and was not merged or copied into the infrastructure PR.
-Its provisional `main.py` calculation retained that limitation until PR #2 was
-reviewed separately. That infrastructure work changed no engine, configuration
-default, original test, or teammate-owned deliverable. Both PRs are now merged;
-section 13 describes the current statistics baseline.
+The integrated Week 2 repository includes the core infrastructure, corrected
+assigned-customer queue delay, statistics module, and schematic viewer.
 
 Run `.\.venv\Scripts\python.exe -B -m unittest discover -v` (or
-`.venv/bin/python -B -m unittest discover -v` on macOS/Linux). This baseline has
-91 tests: 70 unchanged core tests, 6 preset tests, 6 CSV tests, and 9 bounded stress
-tests. The one-day simulation is simulated time, not a real-time wait. All code
-added here uses the standard library; SimPy remains the only runtime dependency.
+`.venv/bin/python -B -m unittest discover -v` on macOS/Linux). Full discovery
+covers 134 tests: 70 core, 6 preset, 6 CSV, 9 bounded stress, 3 CLI regression,
+5 visualization, and 35 metrics tests. The one-day simulation is simulated time,
+not a real-time wait. SimPy is the only pip dependency; see section 7 for Tkinter
+requirements.
 
 `.github/workflows/python-tests.yml` runs the same discovery command on Python
 3.14 and Ubuntu after installing `requirements.txt`. Triggers are PRs targeting
@@ -421,12 +499,11 @@ plots, animation frames, driver identities, or locations are added by export.
 
 ## 13. Week 2 Person 2 statistics delivery
 
-### Baseline and API
+### Integrated API
 
-The statistics branch starts at `main` commit `100696b`, with PRs #2 and #3
-already merged. No open infrastructure PR was merged or copied. All 99 tests on
-that current baseline pass unchanged. Calculations were moved out of `main.py`
-into `metrics.py`, reusing the correct Week 1 assignment-delay definition.
+`metrics.py` contains the performance calculations, including the corrected
+assigned-customer queue-delay definition. `main.py` calls these functions and
+formats output. The engine produces raw history; the viewer consumes it for replay.
 `main.calculate_simulation_metrics(requests)` remains an importable alias of
 `metrics.calculate_simulation_metrics`, preserving both legacy dictionary keys
 and their units. It returns full precision; only the CLI formats numbers.
@@ -521,14 +598,13 @@ All 99 baseline tests remain unchanged: 70 core, 21 infrastructure, 3 Week 1 CLI
 and 5 existing visualization tests. Full discovery passes 134 tests, zero failures
 or errors. Run `python -m unittest discover -v` in the project virtual environment.
 
-The full suite passed after each task: module foundation 99, queue delay 104,
-system time 107, Q integration 114, N integration 116, utilization 121, integration
-tests 133, CLI 134, and documentation 134. Default `main.py` output is documented
-in README: 86 arrivals = 58 completed + 20 active + 0 waiting + 8 abandoned;
+Default `main.py` output is documented in README:
+86 arrivals = 58 completed + 20 active + 0 waiting + 8 abandoned;
 queue delay 0.28 (n=78), completed system time 15.01 (n=58), Q average 0.462,
 N average 17.792, utilization 86.65%, abandonment 9.30%.
 
 These are descriptive finite-run metrics, with no steady-state or uncertainty
 claim. Week 3 warm-up/replications/confidence intervals/beta analysis/experiments
-remain unimplemented. No core simulation, Event Graph, animation, notebook,
-dispatch policy, or existing test is changed by this statistics delivery.
+remain unimplemented. Q(t)/B(t) plots are also pending; time-average metrics and
+the schematic viewer do not implement those plots. See section 10 for the
+remaining team responsibilities.
