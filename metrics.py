@@ -1,7 +1,6 @@
-"""Read-only finite-run statistics; times are minutes and values are unrounded.
+"""Finite-run statistics in minutes, without rounding or modifying records.
 
-Consume request records after a successful, settled simulation run. Empty
-populations have mean 0.0 and count 0; this convention is not an observation.
+Use records from a successful run. Empty means return 0.0/count 0, not a sample.
 """
 
 from collections.abc import Iterable
@@ -14,7 +13,7 @@ from simulation import RideRequest, SimulationEvent
 
 @dataclass(frozen=True)
 class SampleMean:
-    """Unrounded sample mean in minutes and its observation denominator."""
+    """Sample mean in minutes and its observation count."""
 
     mean: float
     count: int
@@ -26,10 +25,10 @@ def _sample_mean(values: Iterable[float]) -> SampleMean:
 
 
 def average_queue_delay(requests: Iterable[RideRequest]) -> SampleMean:
-    """Assignment minus arrival for assigned customers, including active service.
+    """Mean assignment minus arrival, including unfinished service.
 
-    Excludes abandoned and still-waiting customers. Pickup travel is not queue
-    delay. A timestamp of zero is a recorded assignment, not a missing value.
+    Excludes abandoned and still-waiting customers, and excludes pickup travel.
+    A zero assignment timestamp is valid.
     """
     return _sample_mean(
         r.driver_assignment_time - r.arrival_time
@@ -39,10 +38,9 @@ def average_queue_delay(requests: Iterable[RideRequest]) -> SampleMean:
 
 
 def average_time_in_system(requests: Iterable[RideRequest]) -> SampleMean:
-    """Completion minus arrival for completed trips only.
+    """Mean completion minus arrival over completed trips only.
 
-    Abandoned residence times and unfinished (censored) pickup/trip/waiting
-    outcomes do not enter either the sum or the observation denominator.
+    Abandoned and unfinished customers are excluded from sum and denominator.
     """
     return _sample_mean(
         r.completion_time - r.arrival_time
@@ -59,11 +57,10 @@ def _time_average(
 ) -> float:
     """Integrate post-event states over [0, horizon], optionally per capacity.
 
-    Sort a copy by (time, sequence). Initial state is zero before the first row;
-    the last state persists to the horizon. Same-time intervals have zero area.
-    Rows beyond the horizon do not contribute. Empty histories and T=0 return
-    0.0. Negative/nonfinite horizons, timestamps, and states raise ValueError;
-    capacity, when supplied, also bounds the state. T=0 needs no history scan.
+    Sort by (time, sequence), starting from zero and holding the last state to T.
+    Equal-time rows have zero area; rows beyond T do not contribute.
+    Empty histories and T=0 return 0.0; T=0 skips history validation.
+    Reject negative/nonfinite inputs and states above the supplied capacity.
     """
     if not isfinite(horizon) or horizon < 0:
         raise ValueError("Observation horizon must be finite and nonnegative.")
@@ -104,9 +101,8 @@ def driver_utilization(
 ) -> float:
     """Integral of B(t) / (fleet_size * T), as a fraction in [0, 1].
 
-    B includes pickup and trip, including partial service at T. Use the current
-    config's fleet_size. Invalid capacity or B outside capacity raises ValueError;
-    only floating-point drift of a valid integral is bounded at one.
+    Includes pickup, trip, and partial service at T. Use the configured fleet.
+    Reject invalid capacity or B; clamp only floating-point drift above one.
     """
     if isinstance(fleet_size, bool) or not isinstance(fleet_size, int) or fleet_size <= 0:
         raise ValueError("Fleet size must be a positive integer.")
@@ -120,10 +116,10 @@ def abandonment_rate(requests: Iterable[RideRequest]) -> float:
 
 
 def calculate_simulation_metrics(requests: list[RideRequest]) -> dict[str, float]:
-    """Preserve the Week 1 two-key API, including its abandonment percentage.
+    """Legacy two-key API, also re-exported by main.
 
-    main re-exports this function for existing imports. New consumers should
-    use the individual functions for observation counts and fraction-valued rates.
+    Its rate is a percentage; individual metric functions expose counts and
+    fraction-valued rates.
     """
     return {
         "average_waiting_time": average_queue_delay(requests).mean,

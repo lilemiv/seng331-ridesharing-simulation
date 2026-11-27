@@ -1,4 +1,4 @@
-"""Simulation settings. All simulation times are measured in minutes."""
+"""Simulation settings; all times are in minutes."""
 
 from dataclasses import dataclass
 from math import isfinite, log
@@ -38,7 +38,6 @@ class SimulationConfig:
                 raise ValueError(f"{name} must be finite and positive.")
         if isinstance(self.random_seed, bool) or not isinstance(self.random_seed, int):
             raise ValueError("Random seed must be an integer.")
-        # NaN and infinity cannot define a valid arrival rate or run horizon.
         if (
             not isfinite(self.mean_interarrival_minutes)
             or self.mean_interarrival_minutes <= 0

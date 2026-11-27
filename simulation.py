@@ -21,11 +21,10 @@ EventType = Literal[
 
 @dataclass(frozen=True)
 class SimulationEvent:
-    """Logical state immediately after a lifecycle event, in sequence order.
+    """Customer state after a lifecycle event, ordered by sequence.
 
-    Same-time rows have zero elapsed time between them. For the state after
-    all events at a time, use its last row. Counts describe customer states,
-    not transient internal SimPy grants waiting for process callbacks.
+    Equal-time rows have zero duration; the last row supplies the next state.
+    Counts exclude transient SimPy grants awaiting customer callbacks.
     """
 
     sequence: int
@@ -57,15 +56,15 @@ class DriverEvent:
 
 @dataclass
 class RideRequest:
-    """Arrival ledger entry. Times use minutes; None means not yet reached.
+    """Request lifecycle in minutes; None means a stage has not been reached.
 
-    Status stays in_service through pickup and trip. Sampled durations become
-    available when their stage starts; they are not completion timestamps.
+    Pickup and trip share in_service status. Durations are sampled at stage
+    start and do not imply completion.
     """
 
     request_id: int
-    arrival_time: float  # Minutes since the simulation started.
-    patience_time: float  # Sampled once at arrival, in minutes.
+    arrival_time: float
+    patience_time: float  # Sampled once at arrival.
     service_start_time: float | None = None
     completion_time: float | None = None
     abandonment_time: float | None = None
@@ -103,11 +102,10 @@ class RideSharingSimulation:
     def __init__(self, config: SimulationConfig) -> None:
         self.config = config
         self.env = simpy.Environment()
-        # Python normalizes negative integer seeds using abs(). Normalize the
-        # base before offsets so negative seeds cannot collapse two streams.
+        # Normalize before offsets so negative seeds cannot collapse RNG streams.
         stream_seed = abs(config.random_seed)
         self.rng = random.Random(stream_seed)
-        # A separate stream preserves the arrival sequence from earlier steps.
+        # Separate streams keep patience, service, and dispatch draws independent.
         self.patience_rng = random.Random(stream_seed + 1)
         self.pickup_rng = random.Random(stream_seed + 2)
         self.trip_rng = random.Random(stream_seed + 3)
@@ -124,13 +122,12 @@ class RideSharingSimulation:
         self._initial_drivers = self.drivers
         # Complete arrival history; the active FIFO queue is driver_pool.queue.
         self.requests: list[RideRequest] = []
-        # Map pending/held Resource events to their customer records.
+        # Resource requests need a lookup to their customer records.
         self._resource_requests: dict[simpy.resources.resource.Request, RideRequest] = {}
         self._counts: Counter[str] = Counter()
         self.event_history: list[SimulationEvent] = []
         self._record_event("simulation_start")
 
-        # Register the generator as a process; it starts when env.run() runs.
         self.env.process(self.generate_requests())
 
     def generate_requests(self) -> Generator[simpy.events.Timeout, None, None]:
@@ -140,8 +137,7 @@ class RideSharingSimulation:
             delay = self.rng.expovariate(
                 1.0 / self.config.mean_interarrival_minutes
             )
-            # Yielding a timeout suspends this process until that event occurs.
-            # SimPy advances its clock; this does not wait in real time.
+            # Advance simulated time without blocking other customer processes.
             yield self.env.timeout(delay)
 
             request = RideRequest(
@@ -155,8 +151,7 @@ class RideSharingSimulation:
             request.destination_x, request.destination_y = self._sample_position(self.destination_rng)
             self.requests.append(request)
             self._record_event("arrival", request)
-            # Starting service in another process lets arrivals continue while
-            # customers wait for drivers or receive service.
+            # Customer waiting and service must not block later arrivals.
             self.env.process(self.customer_process(request))
 
     def customer_process(
@@ -168,8 +163,7 @@ class RideSharingSimulation:
         self._resource_requests[driver_request] = request
         try:
             with driver_request:
-                # This event succeeds now if capacity is free. Otherwise,
-                # SimPy queues it in FIFO order until a driver is released.
+                # Capacity is granted immediately or queued in FIFO order.
                 patience_expired = self.env.timeout(request.patience_time)
                 result = yield driver_request | patience_expired
 
@@ -178,8 +172,7 @@ class RideSharingSimulation:
                     request.abandonment_time = self.env.now
                     request.status = "abandoned"
                     self._record_event("abandonment", request)
-                    # Context exit cancels a pending request, or releases a
-                    # slot granted during a same-time event race.
+                    # Context exit cancels waiting or releases a same-time grant.
                     return
 
                 self._assign_driver(request)
@@ -195,8 +188,7 @@ class RideSharingSimulation:
                 self._release_driver(request)
             # Context exit releases the driver for the next waiting customer.
         finally:
-            # A failed service must not leak the named reservation. Do not
-            # fabricate a normal release event for an invalid, discarded run.
+            # Failed runs release ownership without recording a normal completion.
             if request.assigned_driver_id is not None:
                 driver = self._drivers[request.assigned_driver_id]
                 if driver.assigned_request_id == request.request_id:
@@ -276,12 +268,10 @@ class RideSharingSimulation:
             )
         except OverflowError as error:
             raise ValueError("Trip sample overflowed; check trip parameters.") from error
-        # Extreme log-scale parameters can underflow or overflow in floating
-        # point. Fail clearly rather than schedule a zero or infinite trip.
+        # Reject underflow/overflow rather than schedule a zero or infinite trip.
         if not isfinite(request.trip_duration) or request.trip_duration <= 0:
             raise ValueError("Sampled trip duration must be finite and positive.")
         yield self.env.timeout(request.trip_duration)
-        # The parent records completion and releases the driver at this time.
 
     @property
     def waiting_requests(self) -> tuple[RideRequest, ...]:
@@ -296,7 +286,7 @@ class RideSharingSimulation:
     def _record_event(
         self, event_type: EventType, request: RideRequest | None = None
     ) -> None:
-        """Maintain logical counts and append raw state, without computing metrics."""
+        """Update lifecycle counts and record the post-event state."""
         if event_type == "arrival":
             self._counts["waiting"] += 1
         elif event_type == "driver_assignment":
@@ -457,8 +447,7 @@ class RideSharingSimulation:
         require(actual_busy == expected_busy and len(actual_busy) == self.driver_pool.count,
                 "named drivers disagree with active requests or Resource")
 
-        # Reconstruct positions and ownership without trusting final driver state
-        # or maintaining a second mutable availability pool.
+        # Replay history independently of final ownership and positions.
         positions = {driver.driver_id: (driver.x, driver.y) for driver in self.initial_drivers}
         active = {}
         assigned = set()

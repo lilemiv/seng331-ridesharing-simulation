@@ -1,4 +1,4 @@
-"""Regression coverage for the existing CLI calculation; no Week 2 metrics."""
+"""Regression checks for the legacy CLI metrics API."""
 
 import unittest
 from unittest.mock import patch

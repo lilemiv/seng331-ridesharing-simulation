@@ -1,4 +1,4 @@
-"""Run the core simulation and display request lifecycle records."""
+"""Run the simulation and print lifecycle counts and performance metrics."""
 
 from collections import Counter
 
@@ -16,7 +16,7 @@ from simulation import RideSharingSimulation
 
 
 def format_time(value: float | None) -> str:
-    """Display an unrecorded timestamp without confusing it with time zero."""
+    """Keep missing timestamps distinct from time zero."""
     return "pending" if value is None else f"{value:.3f}"
 
 

@@ -1,14 +1,7 @@
-"""Schematic 2D event-history replay for the ride-sharing simulation.
+"""Tkinter replay using schematic positions, not simulation coordinates.
 
-No geographic coordinates exist in the simulation. Positions in this viewer
-are illustrative display positions, *not* actual driver or customer locations.
-
-Run from the repository root:
-    python city_visualization.py
-    python city_visualization.py --csv events.csv
-
-The first form runs the existing engine once, the second replays a CSV exported
-with event_export.export_event_history(). The UI uses only tkinter (stdlib).
+Run `python city_visualization.py` for a default simulation, or add
+`--csv events.csv` to replay an export from export_event_history().
 """
 
 from __future__ import annotations
@@ -91,7 +84,7 @@ def load_csv(path: str | Path) -> list[ReplayEvent]:
 
 
 class ReplayState:
-    """View-only projection of events; never alters simulation engine records."""
+    """Reconstruct customer stages without changing engine records."""
 
     def __init__(self) -> None:
         self.customers: dict[int, str] = {}
@@ -136,7 +129,6 @@ class ReplayState:
 
 class CityViewer:
     WIDTH, HEIGHT = 940, 590
-    # Named schematic areas, not geographic sites.
     ZONES = {
         "waiting": (80, 86, 280, 224, "WAITING"),
         "pickup": (335, 86, 535, 224, "ASSIGNED: PICKUP"),
@@ -144,7 +136,6 @@ class CityViewer:
         "completed": (94, 338, 395, 487, "COMPLETED"),
         "abandoned": (525, 338, 838, 487, "ABANDONED"),
     }
-
 
     def __init__(self, root: tk.Tk, events: list[ReplayEvent]) -> None:
         self.root = root
@@ -176,7 +167,7 @@ class CityViewer:
         self.play_button.pack(side="left", padx=(0, 8))
         ttk.Button(controls, text="Restart", command=self.restart).pack(side="left", padx=(0, 12))
         ttk.Label(controls, text="Speed (sim min / sec):").pack(side="left")
-        
+
         self.speed_label = ttk.Label(controls, text=f"{self.speed.get():.1f}")
 
         ttk.Scale(
@@ -203,7 +194,7 @@ class CityViewer:
         c = self.canvas
         c.delete("all")
         c.create_rectangle(0, 0, self.WIDTH, self.HEIGHT, fill="#E8F0F0", outline="")
-        # Fixed stylized road network and buildings, *not* measured geography.
+        # Roads and buildings are decorative.
         for y in (60, 285, 525):
             c.create_rectangle(0, y, self.WIDTH, y + 25, fill="#BAC8CE", outline="")
             for x in range(10, self.WIDTH, 56):
@@ -220,7 +211,7 @@ class CityViewer:
             if key in {"pickup", "trip"}:
                 self.draw_building(c, x1 + 18, y2 - 52)
                 self.draw_building(c, x2 - 56, y2 - 52)
-        # Fixed stable row-major positions; wrapped customers show via counter.
+        # Fill each zone row by row; show overflow as a count.
         groups: dict[str, list[int]] = {s: [] for s in STATUS_COLORS}
         for rid, status in self.state.customers.items():
             groups[status].append(rid)
@@ -242,7 +233,7 @@ class CityViewer:
                               font=("Arial", 10, "bold"), fill="#3B4B57")
             c.create_text(x2 - 15, y1 + 15, text=str(len(ids)), anchor="e",
                           font=("Arial", 11, "bold"), fill="#182B33")
-        
+
         legend = "Yellow: Waiting | Blue: Assigned (Pickup) | Purple: Assigned (Trip) | Green: Completed | Red: Abandoned"
         c.create_text(self.WIDTH / 2, 565, text=legend, fill="#354B54", font=("Arial", 10))
         ev = self.state.event
@@ -300,7 +291,7 @@ class CityViewer:
         self.after_id = None
         if not self.playing:
             return
-        # Consume equal-time events in event sequence order without a time gap.
+        # Apply all equal-time events in sequence before drawing.
         target_time = self.events[self.position].time
         while self.position < len(self.events) and self.events[self.position].time == target_time:
             self.state.apply(self.events[self.position])
