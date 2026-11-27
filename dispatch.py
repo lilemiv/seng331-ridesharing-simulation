@@ -8,7 +8,7 @@ import random
 
 @dataclass(frozen=True)
 class Driver:
-    """Immutable driver snapshot; availability is derived from the assignment."""
+    """Immutable driver snapshot; unassigned drivers are available."""
 
     driver_id: int
     x: float
@@ -21,7 +21,7 @@ class Driver:
 
 
 def select_random_driver(drivers: Iterable[Driver], rng: random.Random) -> Driver:
-    """Uniform choice over idle drivers in stable ID order; never mutates them."""
+    """Choose uniformly from idle drivers in stable ID order."""
     available = sorted((driver for driver in drivers if driver.is_available),
                        key=lambda driver: driver.driver_id)
     if not available:
@@ -39,8 +39,7 @@ def select_nearest_driver(drivers: Iterable[Driver], pickup_x: float, pickup_y: 
     distance, _, nearest = min(distances, key=lambda row: row[:2])
     if isfinite(distance):
         return nearest
-    # Only rescale if every distance overflows. Scaling ordinary distances by
-    # a distant outlier could otherwise erase distinct subnormal distances.
+    # Rescale only if all distances overflow; outliers can erase tiny distances.
     scale = max(abs(pickup_x), abs(pickup_y),
                 *(max(abs(driver.x), abs(driver.y)) for driver in available)) or 1.0
     return min(available, key=lambda driver: (

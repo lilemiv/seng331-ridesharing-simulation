@@ -16,10 +16,9 @@ SCENARIO_NAMES = tuple(_SCENARIO_CHANGES)
 
 
 def get_scenario(name: str = "baseline", **overrides) -> SimulationConfig:
-    """Return a fresh validated config; explicit overrides take precedence.
+    """Return a validated preset with explicit overrides taking precedence.
 
-    All times are minutes. Unspecified values, including the seed and horizon,
-    retain SimulationConfig defaults. This function does not run a simulation.
+    Unspecified fields retain SimulationConfig defaults, including seed/horizon.
     """
     try:
         changes = _SCENARIO_CHANGES[name]

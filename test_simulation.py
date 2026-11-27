@@ -31,17 +31,17 @@ class DriverPoolTests(unittest.TestCase):
         for arrival_time in arrival_times:
             delays.append(arrival_time - previous_time)
             previous_time = arrival_time
-        # The final delay puts the next arrival beyond the test's horizon.
+        # Keep the next arrival beyond the horizon.
         delays.append(duration + 1.0)
         if patience_times is None:
-            # Preserve the Step 2 scenarios: nobody abandons during those runs.
+            # Default to no abandonment in these controlled runs.
             patience_times = [duration + 1.0] * len(arrival_times)
         with (
             patch.object(simulation.rng, "expovariate", side_effect=delays),
             patch.object(
                 simulation.patience_rng, "expovariate", side_effect=patience_times
             ),
-            # Existing 10-minute regression scenarios now exercise both stages.
+            # Pickup plus trip gives a 10-minute service by default.
             patch.object(simulation.pickup_rng, "uniform", return_value=pickup_duration),
             patch.object(simulation.trip_rng, "lognormvariate", return_value=trip_duration),
         ):
@@ -135,18 +135,17 @@ class DriverPoolTests(unittest.TestCase):
         self.assertIsNone(second.completion_time)
         self.assertIsNone(third.service_start_time)
         self.assertIsNone(third.completion_time)
-        self.assertEqual(len(simulation.requests), 3)  # Full history remains.
+        self.assertEqual(len(simulation.requests), 3)
         self.assertEqual(simulation.driver_pool.count, 1)
-        self.assertEqual(len(simulation.driver_pool.queue), 1)  # Only the waiter.
+        self.assertEqual(len(simulation.driver_pool.queue), 1)
 
     def test_results_are_reproducible_with_same_seed(self):
-        # A small fleet ensures reproducibility also covers waiting customers.
+        # A small fleet also exercises waiting customers.
         config = SimulationConfig(fleet_size=2, random_seed=42)
         first = RideSharingSimulation(config)
         second = RideSharingSimulation(config)
         first.run()
         second.run()
-        # Dataclass equality compares IDs, all recorded times, and statuses.
         self.assertEqual(first.requests, second.requests)
         self.assertEqual(first.driver_pool.count, second.driver_pool.count)
         self.assertEqual(len(first.driver_pool.queue), len(second.driver_pool.queue))

@@ -12,7 +12,6 @@ def plot_q_b(event_history):
 
     fig, axes = plt.subplots(2, 1, figsize=(12, 8))
 
-    # Q(t) - Queue Length
     axes[0].step(times, queue, where="post",
                  color="orange", linewidth=2)
     axes[0].set_title("Q(t) - Queue Length")
@@ -20,7 +19,6 @@ def plot_q_b(event_history):
     axes[0].set_ylabel("Waiting Customers")
     axes[0].grid(True, alpha=0.3)
 
-    # B(t) - Busy Drivers
     axes[1].step(times, busy, where="post",
                  color="royalblue", linewidth=2)
     axes[1].set_title("B(t) - Busy Drivers")
