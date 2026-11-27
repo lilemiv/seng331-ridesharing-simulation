@@ -11,6 +11,11 @@ Requests arrive through a Poisson process. An anonymous SimPy driver Resource
 serves customers in FIFO order, subject to exponential patience before assignment.
 Assigned drivers remain occupied through uniform pickup and lognormal trip stages.
 
+An optional `pickup_mode="distance_aware"` uses pickup overhead plus assignment
+distance / speed. The default remains `"uniform"`; see
+[Distance-aware pickup](docs/DISTANCE_AWARE_PICKUP.md) for parameters, assumptions,
+and reproducible examples for both dispatch policies.
+
 ## Event Graph
 
 The code-aligned Event Graph and detailed lifecycle explanations are available in [EVENT_GRAPH.md](EVENT_GRAPH.md).

@@ -608,3 +608,20 @@ claim. Week 3 warm-up/replications/confidence intervals/beta analysis/experiment
 remain unimplemented. Q(t)/B(t) plots are also pending; time-average metrics and
 the schematic viewer do not implement those plots. See section 10 for the
 remaining team responsibilities.
+
+## 14. Optional distance-aware pickup
+
+`SimulationConfig.pickup_mode` defaults to `"uniform"`, preserving the existing
+pickup distribution and deterministic outputs. `"distance_aware"` uses
+`pickup_base_delay_minutes + assignment_distance / pickup_speed_units_per_minute`.
+Defaults are 1 minute overhead and 1 city coordinate unit/minute.
+
+`request.assignment_distance` is a read-only property recorded at assignment in
+both modes; unassigned requests return `None`. Like the existing timestamp aliases,
+it is not included in `dataclasses.asdict()` or dataclass equality. Read it explicitly
+for spatial analysis. Customer/driver event schemas and the event CSV are unchanged.
+
+See [DISTANCE_AWARE_PICKUP.md](docs/DISTANCE_AWARE_PICKUP.md) for validation, matched
+random inputs, reproduction commands, example results, and limitations. Existing
+metrics and schematic replay need no code changes. Person 3 should later label the
+pickup edge in the Event Graph by mode; this change does not edit the graph/viewer.

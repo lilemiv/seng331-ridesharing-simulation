@@ -3,7 +3,7 @@
 from collections import Counter
 from collections.abc import Generator
 from dataclasses import dataclass, replace
-from math import isclose, isfinite
+from math import hypot, isclose, isfinite
 import random
 from typing import Literal
 
@@ -80,6 +80,15 @@ class RideRequest:
     pickup_y: float | None = None
     destination_x: float | None = None
     destination_y: float | None = None
+
+    def __post_init__(self) -> None:
+        # Keep spatial measurements outside the legacy dataclass/CSV schema.
+        self._assignment_distance: float | None = None
+
+    @property
+    def assignment_distance(self) -> float | None:
+        """Euclidean distance at assignment; None for unassigned requests."""
+        return self._assignment_distance
 
     @property
     def driver_assignment_time(self) -> float | None:
@@ -234,6 +243,10 @@ class RideSharingSimulation:
             driver = select_nearest_driver(self.drivers, request.pickup_x, request.pickup_y)
         else:
             driver = select_random_driver(self.drivers, self.dispatch_rng)
+        distance = hypot(driver.x - request.pickup_x, driver.y - request.pickup_y)
+        if not isfinite(distance):
+            raise ValueError("Assignment distance must be finite.")
+        request._assignment_distance = distance
         self._drivers[driver.driver_id] = replace(
             driver, assigned_request_id=request.request_id
         )
@@ -262,9 +275,17 @@ class RideSharingSimulation:
     ) -> Generator[simpy.events.Timeout, None, None]:
         """Run pickup then trip while the customer process holds its driver."""
         request.pickup_start_time = self.env.now
-        request.pickup_duration = self.pickup_rng.uniform(
-            self.config.pickup_min_minutes, self.config.pickup_max_minutes
-        )
+        if self.config.pickup_mode == "uniform":
+            request.pickup_duration = self.pickup_rng.uniform(
+                self.config.pickup_min_minutes, self.config.pickup_max_minutes
+            )
+        else:
+            request.pickup_duration = (
+                self.config.pickup_base_delay_minutes
+                + request.assignment_distance / self.config.pickup_speed_units_per_minute
+            )
+            if not isfinite(request.pickup_duration) or request.pickup_duration < 0:
+                raise ValueError("Distance-aware pickup duration must be finite and nonnegative.")
         yield self.env.timeout(request.pickup_duration)
         request.pickup_completion_time = self.env.now
 
@@ -373,11 +394,20 @@ class RideSharingSimulation:
             require(start is not None and request.arrival_time <= start < deadline
                     and start < self.env.now and request.abandonment_time is None,
                     f"{label}: invalid assignment")
-            require(request.pickup_start_time == start
-                    and request.pickup_duration is not None
-                    and self.config.pickup_min_minutes <= request.pickup_duration
-                    <= self.config.pickup_max_minutes,
+            require(request.assignment_distance is not None
+                    and isfinite(request.assignment_distance) and request.assignment_distance >= 0,
+                    f"{label}: invalid assignment distance")
+            require(request.pickup_start_time == start and request.pickup_duration is not None
+                    and isfinite(request.pickup_duration) and request.pickup_duration >= 0,
                     f"{label}: invalid pickup start or duration")
+            if self.config.pickup_mode == "uniform":
+                require(self.config.pickup_min_minutes <= request.pickup_duration
+                        <= self.config.pickup_max_minutes, f"{label}: invalid uniform pickup")
+            else:
+                expected = (self.config.pickup_base_delay_minutes
+                            + request.assignment_distance / self.config.pickup_speed_units_per_minute)
+                require(isclose(request.pickup_duration, expected),
+                        f"{label}: invalid distance-aware pickup")
             pickup_end = request.pickup_completion_time
             if pickup_end is None:
                 require(request.status == "in_service" and request.completion_time is None
@@ -385,7 +415,10 @@ class RideSharingSimulation:
                         and start + request.pickup_duration >= self.env.now,
                         f"{label}: invalid unfinished pickup")
                 continue
-            require(start < pickup_end == request.trip_start_time < self.env.now
+            # Zero-distance pickup with zero overhead can finish at assignment.
+            ordered = (start <= pickup_end if self.config.pickup_mode == "distance_aware"
+                       else start < pickup_end)
+            require(ordered and pickup_end == request.trip_start_time < self.env.now
                     and isclose(pickup_end - start, request.pickup_duration)
                     and request.trip_duration is not None
                     and isfinite(request.trip_duration) and request.trip_duration > 0,
@@ -446,6 +479,7 @@ class RideSharingSimulation:
                     f"request {request.request_id}: coordinates")
             if request.status in {"waiting", "abandoned"}:
                 require(request.assigned_driver_id is None, "unassigned request has driver identity")
+                require(request.assignment_distance is None, "unassigned request has assignment distance")
             else:
                 require(request.assigned_driver_id in ids, "assigned request has invalid driver identity")
                 if request.status == "in_service":
@@ -478,6 +512,9 @@ class RideSharingSimulation:
                         "duplicate driver assignment or invalid assignment time")
                 require((event.x, event.y) == positions[event.driver_id],
                         "assignment position differs from last known driver position")
+                require(request.assignment_distance == hypot(event.x - request.pickup_x,
+                                                            event.y - request.pickup_y),
+                        "assignment distance differs from recorded driver position")
                 active[event.driver_id] = event.request_id
                 assigned.add(event.request_id)
             else:
