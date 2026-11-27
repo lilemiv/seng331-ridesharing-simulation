@@ -18,6 +18,9 @@ class SimulationConfig:
     city_width: float = 10.0  # Abstract planar kilometres; not travel-time inputs.
     city_height: float = 10.0
     dispatch_policy: str = "random"
+    pickup_mode: str = "uniform"
+    pickup_speed_units_per_minute: float = 1.0
+    pickup_base_delay_minutes: float = 1.0
 
     @property
     def trip_mu(self) -> float:
@@ -25,6 +28,19 @@ class SimulationConfig:
         return log(self.trip_mean_minutes) - self.trip_sigma * self.trip_sigma / 2.0
 
     def __post_init__(self) -> None:
+        if self.pickup_mode not in ("uniform", "distance_aware"):
+            raise ValueError("pickup_mode must be 'uniform' or 'distance_aware'.")
+        for name, allow_zero in (("pickup_speed_units_per_minute", False),
+                                 ("pickup_base_delay_minutes", True)):
+            value = getattr(self, name)
+            try:
+                valid = (not isinstance(value, bool) and isinstance(value, (int, float))
+                         and isfinite(value) and (value >= 0 if allow_zero else value > 0))
+            except OverflowError:
+                valid = False
+            if not valid:
+                bound = "nonnegative" if allow_zero else "positive"
+                raise ValueError(f"{name} must be finite and {bound}.")
         if self.dispatch_policy not in ("random", "nearest"):
             raise ValueError("dispatch_policy must be 'random' or 'nearest'.")
         for name in ("city_width", "city_height"):
