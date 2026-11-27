@@ -1,1 +1,2 @@
 simpy>=4.1,<5
+matplotlib
